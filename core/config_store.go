@@ -61,6 +61,8 @@ type WebSettings struct {
 	UpdateRepoURL            string `json:"updateRepoUrl"`
 	GithubProxyEnabled       bool   `json:"githubProxyEnabled"`
 	GithubProxyURL           string `json:"githubProxyUrl"`
+	SodaSignerURL            string `json:"sodaSignerUrl"`
+	SodaSignerToken          string `json:"sodaSignerToken"`
 	VgChangeCover            bool   `json:"vgChangeCover"`
 	VgChangeAudio            bool   `json:"vgChangeAudio"`
 	VgChangeLyric            bool   `json:"vgChangeLyric"`
@@ -200,6 +202,9 @@ func defaultWebSettings() WebSettings {
 		UpdateRepoURL:            DefaultUpdateRepoURL,
 		GithubProxyEnabled:       false,
 		GithubProxyURL:           DefaultGithubProxyURL,
+		// 默认不配远程签名服务：soda 包会优先用本机官方客户端的 bdms.node 签名。
+		SodaSignerURL:            "",
+		SodaSignerToken:          "",
 	})
 }
 
@@ -253,6 +258,8 @@ func normalizeWebSettings(settings WebSettings) WebSettings {
 	if settings.GithubProxyURL == "" {
 		settings.GithubProxyURL = DefaultGithubProxyURL
 	}
+	settings.SodaSignerURL = strings.TrimSpace(settings.SodaSignerURL)
+	settings.SodaSignerToken = strings.TrimSpace(settings.SodaSignerToken)
 	settings.DownloadDir = normalizeWebDownloadDir(settings.DownloadDir)
 	return settings
 }
@@ -302,6 +309,9 @@ func SaveWebSettings(settings WebSettings) error {
 
 	if strings.TrimSpace(settings.WebDAVPassword) == "" {
 		settings.WebDAVPassword = GetWebSettings().WebDAVPassword
+	}
+	if strings.TrimSpace(settings.SodaSignerToken) == "" {
+		settings.SodaSignerToken = GetWebSettings().SodaSignerToken
 	}
 	settings = normalizeWebSettings(settings)
 	data, err := json.Marshal(settings)

@@ -227,7 +227,7 @@ func sanitizeDownloadPathSegment(value string) string {
 // FetchDecryptedSodaAudio 下载并解密 soda（汽水）加密音频流，返回明文音频字节。
 func FetchDecryptedSodaAudio(song *model.Song) ([]byte, error) {
 	cookie := CM.Get("soda")
-	sodaInst := soda.New(cookie)
+	sodaInst := NewSodaClient(cookie)
 	info, err := sodaInst.GetDownloadInfo(song)
 	if err != nil {
 		return nil, err

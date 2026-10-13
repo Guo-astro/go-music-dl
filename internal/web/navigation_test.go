@@ -117,7 +117,7 @@ func TestDetailPagePathDetection(t *testing.T) {
 			t.Fatalf("isDetailPagePath(%q) = false, want true", requestPath)
 		}
 	}
-	for _, requestPath := range []string{"/", "/search", "/playlist_categories", "/my_collections", "/local_music_page"} {
+	for _, requestPath := range []string{"/", "/search", "/playlist_categories", "/toplists", "/toplist_songs", "/my_collections", "/local_music_page"} {
 		if isDetailPagePath(requestPath) {
 			t.Fatalf("isDetailPagePath(%q) = true, want false", requestPath)
 		}

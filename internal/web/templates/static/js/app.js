@@ -55,6 +55,9 @@ let webSettings = {
   updateRepoUrl: DEFAULT_UPDATE_REPO_URL,
   githubProxyEnabled: false,
   githubProxyUrl: DEFAULT_GITHUB_PROXY_URL,
+  sodaSignerUrl: "",
+  sodaSignerToken: "",
+  sodaLocalSignerAvailable: false,
   vgChangeCover: false,
   vgChangeAudio: false,
   vgChangeLyric: false,
@@ -82,6 +85,9 @@ function normalizeWebSettings(raw) {
     updateRepoUrl: DEFAULT_UPDATE_REPO_URL,
     githubProxyEnabled: false,
     githubProxyUrl: DEFAULT_GITHUB_PROXY_URL,
+    sodaSignerUrl: "",
+    sodaSignerToken: "",
+    sodaLocalSignerAvailable: false,
     vgChangeCover: false,
     vgChangeAudio: false,
     vgChangeLyric: false,
@@ -160,6 +166,15 @@ function normalizeWebSettings(raw) {
     raw.githubProxyUrl.trim() !== ""
   ) {
     next.githubProxyUrl = raw.githubProxyUrl.trim();
+  }
+  if (typeof raw.sodaSignerUrl === "string") {
+    next.sodaSignerUrl = raw.sodaSignerUrl.trim();
+  }
+  if (typeof raw.sodaSignerToken === "string") {
+    next.sodaSignerToken = raw.sodaSignerToken;
+  }
+  if (typeof raw.sodaLocalSignerAvailable === "boolean") {
+    next.sodaLocalSignerAvailable = raw.sodaLocalSignerAvailable;
   }
   if (typeof raw.vgChangeCover === "boolean") {
     next.vgChangeCover = raw.vgChangeCover;
@@ -373,6 +388,24 @@ function applyWebSettings(settings) {
   const webdavDirInput = document.getElementById("setting-webdav-dir");
   if (webdavDirInput) {
     webdavDirInput.value = webSettings.webdavDir;
+  }
+  const sodaSignerUrlInput = document.getElementById("setting-soda-signer-url");
+  if (sodaSignerUrlInput) {
+    sodaSignerUrlInput.value = webSettings.sodaSignerUrl;
+  }
+  const sodaSignerTokenInput = document.getElementById(
+    "setting-soda-signer-token",
+  );
+  if (sodaSignerTokenInput) {
+    sodaSignerTokenInput.value = "";
+  }
+  const sodaLocalSignerState = document.getElementById(
+    "setting-soda-local-signer-state",
+  );
+  if (sodaLocalSignerState) {
+    sodaLocalSignerState.textContent = webSettings.sodaLocalSignerAvailable
+      ? "已检测到本机签名器：留空地址即可用。"
+      : "未检测到本机签名器：请安装汽水官方客户端（或 Node.js），或填写下面的远程签名服务地址。";
   }
   bindWebDAVSettingEvents();
   syncWebDAVVisibility();
@@ -1832,6 +1865,25 @@ function goToUserPlaylists() {
     navigateTo(
       API_ROOT +
         "/user_playlists?sources=" +
+        selected.map(encodeURIComponent).join("&sources="),
+    );
+  }
+}
+
+function goToTopLists() {
+  const selected = [];
+  document.querySelectorAll(".source-checkbox:checked").forEach((cb) => {
+    if (cb.dataset.toplistSupported === "true") {
+      selected.push(cb.value);
+    }
+  });
+
+  if (selected.length === 0) {
+    navigateTo(API_ROOT + "/toplists");
+  } else {
+    navigateTo(
+      API_ROOT +
+        "/toplists?sources=" +
         selected.map(encodeURIComponent).join("&sources="),
     );
   }
@@ -3988,6 +4040,10 @@ async function saveCookies() {
     updateRepoUrl: webSettings.updateRepoUrl || DEFAULT_UPDATE_REPO_URL,
     githubProxyEnabled: !!webSettings.githubProxyEnabled,
     githubProxyUrl: webSettings.githubProxyUrl || DEFAULT_GITHUB_PROXY_URL,
+    sodaSignerUrl:
+      document.getElementById("setting-soda-signer-url")?.value || "",
+    sodaSignerToken:
+      document.getElementById("setting-soda-signer-token")?.value || "",
     vgChangeCover: !!document.getElementById("setting-vg-change-cover")
       ?.checked,
     vgChangeAudio: !!document.getElementById("setting-vg-change-audio")

@@ -108,7 +108,22 @@ func setDownloadHeader(c *gin.Context, filename string) {
 func publicWebSettings() core.WebSettings {
 	settings := core.GetWebSettings()
 	settings.WebDAVPassword = ""
+	// 签名服务 token 等同取流能力，不回显到页面（留空保存时保留旧值）。
+	settings.SodaSignerToken = ""
 	return settings
+}
+
+// webSettingsPayload 在公开设置上追加运行时状态（不落库）：本机签名器是否可用。
+type webSettingsPayload struct {
+	core.WebSettings
+	SodaLocalSignerAvailable bool `json:"sodaLocalSignerAvailable"`
+}
+
+func publicWebSettingsPayload() webSettingsPayload {
+	return webSettingsPayload{
+		WebSettings:              publicWebSettings(),
+		SodaLocalSignerAvailable: core.LocalSodaSignerAvailable(),
+	}
 }
 
 func asciiDownloadFilenameFallback(filename string) string {
@@ -238,6 +253,10 @@ func renderIndex(c *gin.Context, songs []model.Song, playlists []model.Playlist,
 	for _, s := range core.GetPlaylistCategorySourceNames() {
 		playlistCategorySupported[s] = true
 	}
+	topListSupported := make(map[string]bool)
+	for _, s := range core.GetTopListSourceNames() {
+		topListSupported[s] = true
+	}
 	qrLoginSupported := make(map[string]bool)
 	for _, s := range core.GetQRLoginSourceNames() {
 		qrLoginSupported[s] = true
@@ -250,6 +269,8 @@ func renderIndex(c *gin.Context, songs []model.Song, playlists []model.Playlist,
 	playlistCategorySources, _ := c.Get("PlaylistCategorySources")
 	playlistCategoryCurrent, _ := c.Get("PlaylistCategoryCurrent")
 	playlistSourceTabs, _ := c.Get("PlaylistSourceTabs")
+	topListSources, _ := c.Get("TopListSources")
+	topListCurrent, _ := c.Get("TopListCurrent")
 
 	settings := core.GetWebSettings()
 	defaultPageSize := settings.WebPageSize
@@ -329,6 +350,7 @@ func renderIndex(c *gin.Context, songs []model.Song, playlists []model.Playlist,
 		"PlaylistSupported":       playlistSupported,
 		"AlbumSupported":          albumSupported,
 		"CategorySupported":       playlistCategorySupported,
+		"TopListSupported":        topListSupported,
 		"QRLoginSupported":        qrLoginSupported,
 		"SearchPlaceholder":       searchPlaceholderForType(searchType),
 		"CollectionLabel":         collectionLabelForSearchType(searchType),
@@ -344,6 +366,8 @@ func renderIndex(c *gin.Context, songs []model.Song, playlists []model.Playlist,
 		"PlaylistCategorySources": playlistCategorySources,
 		"PlaylistCategoryCurrent": playlistCategoryCurrent,
 		"PlaylistSourceTabs":      playlistSourceTabs,
+		"TopListSources":          topListSources,
+		"TopListCurrent":          topListCurrent,
 		"UserPlaylistSupported":   userPlaylistSupported,
 	})
 }
@@ -463,7 +487,7 @@ func StartWithOptions(port string, opts StartOptions) {
 	})
 
 	api.GET("/settings", func(c *gin.Context) {
-		c.JSON(200, publicWebSettings())
+		c.JSON(200, publicWebSettingsPayload())
 	})
 	configAPI.POST("/settings", func(c *gin.Context) {
 		var req core.WebSettings
@@ -475,7 +499,7 @@ func StartWithOptions(port string, opts StartOptions) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(200, publicWebSettings())
+		c.JSON(200, publicWebSettingsPayload())
 	})
 
 	RegisterMusicRoutes(api, configAPI)
