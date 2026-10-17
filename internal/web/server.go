@@ -496,7 +496,11 @@ func StartWithOptions(port string, opts StartOptions) {
 			return
 		}
 		if err := core.SaveWebSettings(req); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			status := http.StatusInternalServerError
+			if errors.Is(err, core.ErrInvalidWebSettings) {
+				status = http.StatusBadRequest
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(200, publicWebSettingsPayload())

@@ -29,6 +29,20 @@ const GITHUB_PROXY_PRESETS = [
   "https://gh-proxy.com/",
   "https://gh.llkk.cc",
 ];
+const DEFAULT_SHORTCUT_PLAY_PAUSE = "Space";
+const DEFAULT_LYRIC_FONT_FAMILY = "system";
+const DEFAULT_LYRIC_FONT_SIZE = 24;
+const LYRIC_FONT_FAMILIES = Object.freeze({
+  system:
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif',
+  sans: '"Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif',
+  serif: '"Songti SC", SimSun, "Noto Serif CJK SC", serif',
+  yahei: '"Microsoft YaHei", "PingFang SC", sans-serif',
+  pingfang: '"PingFang SC", "Microsoft YaHei", sans-serif',
+  "source-han":
+    '"Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
+  lxgw: '"LXGW WenKai", "KaiTi", "STKaiti", serif',
+});
 
 function isLocalMusicSourceValue(source) {
   const value = String(source || "").trim();
@@ -62,6 +76,13 @@ let webSettings = {
   vgChangeAudio: false,
   vgChangeLyric: false,
   vgExportVideo: false,
+  shortcutPlayPause: DEFAULT_SHORTCUT_PLAY_PAUSE,
+  shortcutPrevious: "",
+  shortcutNext: "",
+  shortcutSeekBack: "",
+  shortcutSeekForward: "",
+  lyricFontFamily: DEFAULT_LYRIC_FONT_FAMILY,
+  lyricFontSize: DEFAULT_LYRIC_FONT_SIZE,
 };
 
 function normalizeWebSettings(raw) {
@@ -92,6 +113,13 @@ function normalizeWebSettings(raw) {
     vgChangeAudio: false,
     vgChangeLyric: false,
     vgExportVideo: false,
+    shortcutPlayPause: DEFAULT_SHORTCUT_PLAY_PAUSE,
+    shortcutPrevious: "",
+    shortcutNext: "",
+    shortcutSeekBack: "",
+    shortcutSeekForward: "",
+    lyricFontFamily: DEFAULT_LYRIC_FONT_FAMILY,
+    lyricFontSize: DEFAULT_LYRIC_FONT_SIZE,
   };
 
   if (!raw || typeof raw !== "object") {
@@ -187,6 +215,29 @@ function normalizeWebSettings(raw) {
   }
   if (typeof raw.vgExportVideo === "boolean") {
     next.vgExportVideo = raw.vgExportVideo;
+  }
+  [
+    "shortcutPlayPause",
+    "shortcutPrevious",
+    "shortcutNext",
+    "shortcutSeekBack",
+    "shortcutSeekForward",
+  ].forEach((key) => {
+    if (typeof raw[key] === "string") {
+      next[key] = normalizeShortcutBinding(raw[key]);
+    }
+  });
+  if (
+    typeof raw.lyricFontFamily === "string" &&
+    Object.prototype.hasOwnProperty.call(
+      LYRIC_FONT_FAMILIES,
+      raw.lyricFontFamily,
+    )
+  ) {
+    next.lyricFontFamily = raw.lyricFontFamily;
+  }
+  if (Number.isInteger(raw.lyricFontSize)) {
+    next.lyricFontSize = Math.max(14, Math.min(48, raw.lyricFontSize));
   }
   return next;
 }
@@ -352,6 +403,287 @@ function bindDownloadDirPresetEvents() {
   dirInput.addEventListener("input", syncDownloadDirPresetFromInput);
 }
 
+function normalizeShortcutKey(key) {
+  const value = String(key || "").trim();
+  if (!value) return "";
+
+  const aliases = {
+    space: "Space",
+    spacebar: "Space",
+    esc: "Escape",
+    escape: "Escape",
+    enter: "Enter",
+    return: "Enter",
+    tab: "Tab",
+    backspace: "Backspace",
+    delete: "Delete",
+    del: "Delete",
+    insert: "Insert",
+    ins: "Insert",
+    home: "Home",
+    end: "End",
+    pageup: "PageUp",
+    pgup: "PageUp",
+    pagedown: "PageDown",
+    pgdn: "PageDown",
+    arrowleft: "ArrowLeft",
+    left: "ArrowLeft",
+    arrowright: "ArrowRight",
+    right: "ArrowRight",
+    arrowup: "ArrowUp",
+    up: "ArrowUp",
+    arrowdown: "ArrowDown",
+    down: "ArrowDown",
+    mediaplaypause: "MediaPlayPause",
+    mediatracknext: "MediaTrackNext",
+    mediatrackprevious: "MediaTrackPrevious",
+    mediastop: "MediaStop",
+  };
+  const lower = value.toLowerCase();
+  if (aliases[lower]) return aliases[lower];
+
+  if (/^key[a-z]$/i.test(value)) return value.slice(3).toUpperCase();
+  if (/^digit[0-9]$/i.test(value)) return value.slice(5);
+  if (/^f([1-9]|1[0-9]|2[0-4])$/i.test(value)) {
+    return value.toUpperCase();
+  }
+  if (value.length === 1) return value.toUpperCase();
+  return value.length <= 32 ? value : "";
+}
+
+function normalizeShortcutBinding(binding) {
+  const raw = String(binding || "").trim();
+  if (!raw) return "";
+
+  const modifiers = new Set();
+  let key = "";
+  for (const part of raw.split("+")) {
+    const value = part.trim();
+    if (!value) return "";
+    const lower = value.toLowerCase();
+    if (lower === "ctrl" || lower === "control") {
+      modifiers.add("Ctrl");
+    } else if (lower === "alt" || lower === "option") {
+      modifiers.add("Alt");
+    } else if (lower === "shift") {
+      modifiers.add("Shift");
+    } else if (
+      ["meta", "cmd", "command", "win", "super"].includes(lower)
+    ) {
+      modifiers.add("Meta");
+    } else {
+      if (key) return "";
+      key = normalizeShortcutKey(value);
+      if (!key) return "";
+    }
+  }
+  if (!key) return "";
+
+  return [
+    ...["Ctrl", "Alt", "Shift", "Meta"].filter((modifier) =>
+      modifiers.has(modifier),
+    ),
+    key,
+  ].join("+");
+}
+
+function shortcutBindingFromKeyboardEvent(event) {
+  const ignoredKeys = new Set(["Control", "Shift", "Alt", "Meta"]);
+  if (ignoredKeys.has(event.key)) return "";
+
+  const key = normalizeShortcutKey(event.code || event.key);
+  if (!key || key === "Unidentified") return "";
+
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push("Ctrl");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+  if (event.metaKey) modifiers.push("Meta");
+  modifiers.push(key);
+  return normalizeShortcutBinding(modifiers.join("+"));
+}
+
+function shortcutUsesPaginationKey(binding) {
+  const parts = normalizeShortcutBinding(binding).split("+");
+  const key = parts[parts.length - 1];
+  return key === "PageUp" || key === "PageDown";
+}
+
+function normalizeLyricFontFamily(value) {
+  const family = String(value || "").trim();
+  return Object.prototype.hasOwnProperty.call(LYRIC_FONT_FAMILIES, family)
+    ? family
+    : DEFAULT_LYRIC_FONT_FAMILY;
+}
+
+function normalizeLyricFontSize(value) {
+  const size = Number.parseInt(value, 10);
+  if (!Number.isFinite(size)) return DEFAULT_LYRIC_FONT_SIZE;
+  return Math.max(14, Math.min(48, size));
+}
+
+function lyricFontCSSValue(family) {
+  return (
+    LYRIC_FONT_FAMILIES[normalizeLyricFontFamily(family)] ||
+    LYRIC_FONT_FAMILIES[DEFAULT_LYRIC_FONT_FAMILY]
+  );
+}
+
+function applyLyricAppearance() {
+  const family = lyricFontCSSValue(webSettings.lyricFontFamily);
+  const size = normalizeLyricFontSize(webSettings.lyricFontSize);
+  document.documentElement.style.setProperty("--lyric-font-family", family);
+  document.documentElement.style.setProperty("--lyric-font-size", `${size}px`);
+}
+
+function updateLyricFontPreview(family, size) {
+  const preview = document.getElementById("setting-lyric-font-preview");
+  if (!preview) return;
+  preview.style.fontFamily = lyricFontCSSValue(family);
+  preview.style.fontSize = `${normalizeLyricFontSize(size)}px`;
+}
+
+function syncLyricAppearanceControls() {
+  const familyInput = document.getElementById("setting-lyric-font-family");
+  const sizeInput = document.getElementById("setting-lyric-font-size");
+  const sizeValue = document.getElementById(
+    "setting-lyric-font-size-value",
+  );
+  const family = normalizeLyricFontFamily(webSettings.lyricFontFamily);
+  const size = normalizeLyricFontSize(webSettings.lyricFontSize);
+
+  if (familyInput) familyInput.value = family;
+  if (sizeInput) sizeInput.value = String(size);
+  if (sizeValue) sizeValue.textContent = `${size} px`;
+  updateLyricFontPreview(family, size);
+  applyLyricAppearance();
+}
+
+function bindLyricFontSettingEvents() {
+  const familyInput = document.getElementById("setting-lyric-font-family");
+  const sizeInput = document.getElementById("setting-lyric-font-size");
+  const sizeValue = document.getElementById(
+    "setting-lyric-font-size-value",
+  );
+  if (!familyInput || !sizeInput || sizeInput.dataset.bound === "1") return;
+
+  sizeInput.dataset.bound = "1";
+  const preview = () => {
+    const size = normalizeLyricFontSize(sizeInput.value);
+    if (sizeValue) sizeValue.textContent = `${size} px`;
+    updateLyricFontPreview(familyInput.value, size);
+  };
+  familyInput.addEventListener("change", preview);
+  sizeInput.addEventListener("input", preview);
+}
+
+const PLAYBACK_SHORTCUT_FIELDS = Object.freeze([
+  ["shortcutPlayPause", "setting-shortcut-play-pause", "播放 / 暂停"],
+  ["shortcutPrevious", "setting-shortcut-previous", "上一首"],
+  ["shortcutNext", "setting-shortcut-next", "下一首"],
+  ["shortcutSeekBack", "setting-shortcut-seek-back", "后退 10 秒"],
+  ["shortcutSeekForward", "setting-shortcut-seek-forward", "前进 10 秒"],
+]);
+
+function setShortcutCaptureStatus(message = "", isError = false) {
+  const status = document.getElementById("setting-shortcut-status");
+  if (!status) return;
+  status.textContent =
+    message ||
+    "点击输入框后按下组合键；Backspace / Delete 清空，Esc 取消。PageUp / PageDown 保留给列表翻页。";
+  status.classList.toggle("is-error", isError);
+}
+
+function handleShortcutCaptureKeydown(event) {
+  if (event.key === "Tab") return;
+  event.preventDefault();
+  event.stopPropagation();
+  const input = event.currentTarget;
+
+  if (event.key === "Escape") {
+    input.value = input.dataset.previousValue || "";
+    setShortcutCaptureStatus();
+    input.blur();
+    return;
+  }
+  if (
+    (event.key === "Backspace" || event.key === "Delete") &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey
+  ) {
+    input.value = "";
+    setShortcutCaptureStatus();
+    return;
+  }
+  if (["Control", "Shift", "Alt", "Meta"].includes(event.key)) return;
+
+  const binding = shortcutBindingFromKeyboardEvent(event);
+  if (!binding) return;
+  if (shortcutUsesPaginationKey(binding)) {
+    setShortcutCaptureStatus(
+      "PageUp / PageDown 已用于列表翻页，请换一个按键组合。",
+      true,
+    );
+    return;
+  }
+  input.value = binding;
+  setShortcutCaptureStatus(`已捕获：${binding}`);
+}
+
+function syncPlaybackShortcutControls() {
+  PLAYBACK_SHORTCUT_FIELDS.forEach(([key, elementId]) => {
+    const input = document.getElementById(elementId);
+    if (input) input.value = normalizeShortcutBinding(webSettings[key]);
+  });
+}
+
+function bindPlaybackShortcutSettingEvents() {
+  document.querySelectorAll("[data-shortcut-input]").forEach((input) => {
+    if (input.dataset.bound === "1") return;
+    input.dataset.bound = "1";
+    input.addEventListener("focus", () => {
+      input.dataset.previousValue = input.value;
+      setShortcutCaptureStatus("请按下新的快捷键组合…");
+    });
+    input.addEventListener("keydown", handleShortcutCaptureKeydown);
+    input.addEventListener("blur", () => setShortcutCaptureStatus());
+  });
+  document.querySelectorAll("[data-shortcut-clear]").forEach((button) => {
+    if (button.dataset.bound === "1") return;
+    button.dataset.bound = "1";
+    button.addEventListener("click", () => {
+      const input = document.getElementById(button.dataset.shortcutClear);
+      if (!input) return;
+      input.value = "";
+      setShortcutCaptureStatus();
+      input.focus();
+    });
+  });
+}
+
+function readPlaybackShortcutSettingsFromForm() {
+  const settings = {};
+  const seen = new Map();
+  for (const [key, elementId, label] of PLAYBACK_SHORTCUT_FIELDS) {
+    const input = document.getElementById(elementId);
+    const binding = normalizeShortcutBinding(input?.value || "");
+    if (input) input.value = binding;
+    settings[key] = binding;
+    if (!binding) continue;
+    if (shortcutUsesPaginationKey(binding)) {
+      throw new Error(`${label} 不能使用 PageUp / PageDown，该按键保留给列表翻页。`);
+    }
+    if (seen.has(binding)) {
+      throw new Error(
+        `快捷键冲突：${seen.get(binding)} 和 ${label} 都使用了 ${binding}。`,
+      );
+    }
+    seen.set(binding, label);
+  }
+  return settings;
+}
+
 function applyWebSettings(settings) {
   const wasAutoSwitchInvalidSourcesEnabled =
     isAutoSwitchInvalidSourcesEnabled();
@@ -437,6 +769,10 @@ function applyWebSettings(settings) {
   if (floatingLyricsToggle) {
     floatingLyricsToggle.checked = !webSettings.disableFloatingLyrics;
   }
+  bindLyricFontSettingEvents();
+  syncLyricAppearanceControls();
+  bindPlaybackShortcutSettingEvents();
+  syncPlaybackShortcutControls();
 
   const webPageSizeInput = document.getElementById("setting-web-page-size");
   if (webPageSizeInput) {
@@ -1631,9 +1967,6 @@ function togglePlayback() {
 
 function handlePlaybackShortcut(event) {
   if (event.defaultPrevented || event.isComposing) return;
-  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-  if (event.code !== "Space" && event.key !== " " && event.key !== "Spacebar")
-    return;
   if (
     isEditableElement(event.target) ||
     isEditableElement(document.activeElement)
@@ -1649,8 +1982,24 @@ function handlePlaybackShortcut(event) {
   )
     return;
 
+  const binding = shortcutBindingFromKeyboardEvent(event);
+  if (!binding) return;
+  const actions = [
+    [webSettings.shortcutPlayPause, togglePlayback],
+    [webSettings.shortcutPrevious, () => switchTrackByOffset(-1)],
+    [webSettings.shortcutNext, () => switchTrackByOffset(1)],
+    [webSettings.shortcutSeekBack, () => adjustCurrentTrackPosition(-10)],
+    [webSettings.shortcutSeekForward, () => adjustCurrentTrackPosition(10)],
+  ];
+  const action = actions.find(
+    ([shortcut]) =>
+      shortcut && normalizeShortcutBinding(shortcut) === binding,
+  );
+  if (!action) return;
+
   event.preventDefault();
-  togglePlayback();
+  if (event.repeat && action[0] === webSettings.shortcutPlayPause) return;
+  action[1]();
 }
 
 function bindPageNavigationEvents() {
@@ -4003,56 +4352,72 @@ async function saveCookies() {
   const webPageSizeInput = document.getElementById("setting-web-page-size");
   const cliPageSizeInput = document.getElementById("setting-cli-page-size");
 
-  const nextSettings = normalizeWebSettings({
-    embedDownload: !!document.getElementById("setting-embed-download")?.checked,
-    downloadDir: document.getElementById("setting-download-dir")?.value || "",
-    downloadFilenameTemplate:
-      document.getElementById("setting-download-filename-template")?.value ||
-      "",
-    downloadTipDuration: parsePositiveInt(
-      document.getElementById("setting-download-tip-duration")?.value,
-      DEFAULT_DOWNLOAD_TIP_DURATION,
-    ),
-    webdavEnabled: !!document.getElementById("setting-webdav-enabled")
-      ?.checked,
-    webdavUrl: document.getElementById("setting-webdav-url")?.value || "",
-    webdavUsername:
-      document.getElementById("setting-webdav-username")?.value || "",
-    webdavPassword:
-      document.getElementById("setting-webdav-password")?.value || "",
-    webdavDir: document.getElementById("setting-webdav-dir")?.value || "",
-    disableFloatingLyrics: !document.getElementById("setting-floating-lyrics")
-      ?.checked,
-    webPageSize: parsePositiveInt(
-      webPageSizeInput?.value,
-      DEFAULT_WEB_PAGE_SIZE,
-    ),
-    cliPageSize: parsePositiveInt(
-      cliPageSizeInput?.value,
-      DEFAULT_CLI_PAGE_SIZE,
-    ),
-    autoCheckUpdate: webSettings.autoCheckUpdate,
-    autoSwitchInvalidSources: !!document.getElementById(
-      "setting-auto-switch-invalid-sources",
-    )?.checked,
-    autoCacheOnPlay: !!document.getElementById("setting-auto-cache-on-play")
-      ?.checked,
-    updateRepoUrl: webSettings.updateRepoUrl || DEFAULT_UPDATE_REPO_URL,
-    githubProxyEnabled: !!webSettings.githubProxyEnabled,
-    githubProxyUrl: webSettings.githubProxyUrl || DEFAULT_GITHUB_PROXY_URL,
-    sodaSignerUrl:
-      document.getElementById("setting-soda-signer-url")?.value || "",
-    sodaSignerToken:
-      document.getElementById("setting-soda-signer-token")?.value || "",
-    vgChangeCover: !!document.getElementById("setting-vg-change-cover")
-      ?.checked,
-    vgChangeAudio: !!document.getElementById("setting-vg-change-audio")
-      ?.checked,
-    vgChangeLyric: !!document.getElementById("setting-vg-change-lyric")
-      ?.checked,
-    vgExportVideo: !!document.getElementById("setting-vg-export-video")
-      ?.checked,
-  });
+  let nextSettings;
+  try {
+    nextSettings = normalizeWebSettings({
+      embedDownload: !!document.getElementById("setting-embed-download")
+        ?.checked,
+      downloadDir: document.getElementById("setting-download-dir")?.value || "",
+      downloadFilenameTemplate:
+        document.getElementById("setting-download-filename-template")?.value ||
+        "",
+      downloadTipDuration: parsePositiveInt(
+        document.getElementById("setting-download-tip-duration")?.value,
+        DEFAULT_DOWNLOAD_TIP_DURATION,
+      ),
+      webdavEnabled: !!document.getElementById("setting-webdav-enabled")
+        ?.checked,
+      webdavUrl: document.getElementById("setting-webdav-url")?.value || "",
+      webdavUsername:
+        document.getElementById("setting-webdav-username")?.value || "",
+      webdavPassword:
+        document.getElementById("setting-webdav-password")?.value || "",
+      webdavDir: document.getElementById("setting-webdav-dir")?.value || "",
+      disableFloatingLyrics: !document.getElementById(
+        "setting-floating-lyrics",
+      )?.checked,
+      webPageSize: parsePositiveInt(
+        webPageSizeInput?.value,
+        DEFAULT_WEB_PAGE_SIZE,
+      ),
+      cliPageSize: parsePositiveInt(
+        cliPageSizeInput?.value,
+        DEFAULT_CLI_PAGE_SIZE,
+      ),
+      autoCheckUpdate: webSettings.autoCheckUpdate,
+      autoSwitchInvalidSources: !!document.getElementById(
+        "setting-auto-switch-invalid-sources",
+      )?.checked,
+      autoCacheOnPlay: !!document.getElementById("setting-auto-cache-on-play")
+        ?.checked,
+      updateRepoUrl: webSettings.updateRepoUrl || DEFAULT_UPDATE_REPO_URL,
+      githubProxyEnabled: !!webSettings.githubProxyEnabled,
+      githubProxyUrl: webSettings.githubProxyUrl || DEFAULT_GITHUB_PROXY_URL,
+      sodaSignerUrl:
+        document.getElementById("setting-soda-signer-url")?.value || "",
+      sodaSignerToken:
+        document.getElementById("setting-soda-signer-token")?.value || "",
+      vgChangeCover: !!document.getElementById("setting-vg-change-cover")
+        ?.checked,
+      vgChangeAudio: !!document.getElementById("setting-vg-change-audio")
+        ?.checked,
+      vgChangeLyric: !!document.getElementById("setting-vg-change-lyric")
+        ?.checked,
+      vgExportVideo: !!document.getElementById("setting-vg-export-video")
+        ?.checked,
+      ...readPlaybackShortcutSettingsFromForm(),
+      lyricFontFamily: normalizeLyricFontFamily(
+        document.getElementById("setting-lyric-font-family")?.value,
+      ),
+      lyricFontSize: normalizeLyricFontSize(
+        document.getElementById("setting-lyric-font-size")?.value,
+      ),
+    });
+  } catch (error) {
+    setShortcutCaptureStatus(error.message, true);
+    alert(error.message || "快捷键设置无效");
+    return;
+  }
 
   const data = {};
   document.querySelectorAll('input[id^="cookie-"]').forEach((input) => {
@@ -4086,7 +4451,9 @@ async function saveCookies() {
     )
       return;
     if (!cookiesResponse.ok || !settingsResponse.ok) {
-      throw new Error("保存失败，请稍后重试");
+      throw new Error(
+        savedSettings?.error || cookiesPayload?.error || "保存失败，请稍后重试",
+      );
     }
     applyWebSettings(savedSettings || nextSettings);
     setAuthFloatLoggedIn(true);

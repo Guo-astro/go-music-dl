@@ -30,6 +30,83 @@
                     </label>
                     <p class="setting-hint">关闭后，播放音乐时不显示底部悬浮歌词。</p>
                 </div>
+                <div class="cookie-item setting-item lyric-appearance-settings">
+                    <div class="settings-section-heading">
+                        <span class="settings-section-icon"><i class="fa-solid fa-font"></i></span>
+                        <span>
+                            <strong>歌词字体</strong>
+                            <small>同时应用到播放器歌词和底部悬浮歌词</small>
+                        </span>
+                    </div>
+                    <div class="lyric-appearance-controls">
+                        <label for="setting-lyric-font-family">
+                            字体
+                            <select id="setting-lyric-font-family">
+                                <option value="system">系统默认</option>
+                                <option value="sans">现代黑体</option>
+                                <option value="serif">宋体 / 衬线</option>
+                                <option value="yahei">微软雅黑</option>
+                                <option value="pingfang">苹方</option>
+                                <option value="source-han">思源黑体 / Noto Sans CJK</option>
+                                <option value="lxgw">霞鹜文楷 / 楷体</option>
+                            </select>
+                        </label>
+                        <label for="setting-lyric-font-size">
+                            字号 <output id="setting-lyric-font-size-value" for="setting-lyric-font-size">24 px</output>
+                            <input type="range" id="setting-lyric-font-size" min="14" max="48" step="1" value="24">
+                        </label>
+                    </div>
+                    <div id="setting-lyric-font-preview" class="lyric-font-preview" aria-live="polite">
+                        示例歌词 · 让每一句都清晰可见
+                    </div>
+                </div>
+                <div class="cookie-item setting-item shortcut-settings">
+                    <div class="settings-section-heading">
+                        <span class="settings-section-icon"><i class="fa-solid fa-keyboard"></i></span>
+                        <span>
+                            <strong>应用内全局快捷键</strong>
+                            <small>焦点不在输入框且未打开弹窗时生效</small>
+                        </span>
+                    </div>
+                    <div class="shortcut-settings-list">
+                        <div class="shortcut-setting-row">
+                            <label for="setting-shortcut-play-pause">播放 / 暂停</label>
+                            <div class="shortcut-capture-control">
+                                <input type="text" id="setting-shortcut-play-pause" data-shortcut-input readonly autocomplete="off" placeholder="未设置">
+                                <button type="button" class="shortcut-clear-btn" data-shortcut-clear="setting-shortcut-play-pause" title="清除播放 / 暂停快捷键"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </div>
+                        <div class="shortcut-setting-row">
+                            <label for="setting-shortcut-previous">上一首</label>
+                            <div class="shortcut-capture-control">
+                                <input type="text" id="setting-shortcut-previous" data-shortcut-input readonly autocomplete="off" placeholder="未设置">
+                                <button type="button" class="shortcut-clear-btn" data-shortcut-clear="setting-shortcut-previous" title="清除上一首快捷键"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </div>
+                        <div class="shortcut-setting-row">
+                            <label for="setting-shortcut-next">下一首</label>
+                            <div class="shortcut-capture-control">
+                                <input type="text" id="setting-shortcut-next" data-shortcut-input readonly autocomplete="off" placeholder="未设置">
+                                <button type="button" class="shortcut-clear-btn" data-shortcut-clear="setting-shortcut-next" title="清除下一首快捷键"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </div>
+                        <div class="shortcut-setting-row">
+                            <label for="setting-shortcut-seek-back">后退 10 秒</label>
+                            <div class="shortcut-capture-control">
+                                <input type="text" id="setting-shortcut-seek-back" data-shortcut-input readonly autocomplete="off" placeholder="未设置">
+                                <button type="button" class="shortcut-clear-btn" data-shortcut-clear="setting-shortcut-seek-back" title="清除后退快捷键"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </div>
+                        <div class="shortcut-setting-row">
+                            <label for="setting-shortcut-seek-forward">前进 10 秒</label>
+                            <div class="shortcut-capture-control">
+                                <input type="text" id="setting-shortcut-seek-forward" data-shortcut-input readonly autocomplete="off" placeholder="未设置">
+                                <button type="button" class="shortcut-clear-btn" data-shortcut-clear="setting-shortcut-seek-forward" title="清除前进快捷键"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="setting-shortcut-status" class="setting-hint shortcut-settings-hint" aria-live="polite">点击输入框后按下组合键；Backspace / Delete 清空，Esc 取消。PageUp / PageDown 保留给列表翻页。</p>
+                </div>
                 <div class="cookie-item">
                     <label for="setting-web-page-size">Web 每页条数</label>
                     <select id="setting-web-page-size" aria-label="Web 每页条数">
