@@ -442,17 +442,28 @@ fn render_monochrome_icon(kind: IconKind) -> ([u8; 64], [u8; 64]) {
     match kind {
         IconKind::Previous => {
             fill_icon_triangle(&mut shape, 3, 2, 3, 13, 10, 8);
-            fill_icon_rect(&mut shape, 11, 2, 12, 13);
+            for (x, y) in [(3, 2), (3, 13), (10, 8)] {
+                clear_icon_pixel(&mut shape, x, y);
+            }
+            fill_icon_rounded_rect(&mut shape, 11, 2, 12, 13, 1);
         }
         IconKind::Next => {
             fill_icon_triangle(&mut shape, 4, 2, 4, 13, 11, 8);
-            fill_icon_rect(&mut shape, 12, 2, 13, 13);
+            for (x, y) in [(4, 2), (4, 13), (11, 8)] {
+                clear_icon_pixel(&mut shape, x, y);
+            }
+            fill_icon_rounded_rect(&mut shape, 12, 2, 13, 13, 1);
         }
         IconKind::Pause => {
-            fill_icon_rect(&mut shape, 3, 2, 5, 13);
-            fill_icon_rect(&mut shape, 10, 2, 12, 13);
+            fill_icon_rounded_rect(&mut shape, 3, 2, 5, 13, 1);
+            fill_icon_rounded_rect(&mut shape, 10, 2, 12, 13, 1);
         }
-        IconKind::Play => fill_icon_triangle(&mut shape, 4, 2, 4, 13, 13, 8),
+        IconKind::Play => {
+            fill_icon_triangle(&mut shape, 4, 2, 4, 13, 13, 8);
+            for (x, y) in [(4, 2), (4, 13), (13, 8)] {
+                clear_icon_pixel(&mut shape, x, y);
+            }
+        }
     }
 
     let is_shape = |x: i32, y: i32| {
@@ -487,6 +498,12 @@ fn set_icon_pixel(shape: &mut [bool; ICON_SIZE * ICON_SIZE], x: i32, y: i32) {
     }
 }
 
+fn clear_icon_pixel(shape: &mut [bool; ICON_SIZE * ICON_SIZE], x: i32, y: i32) {
+    if (0..ICON_SIZE as i32).contains(&x) && (0..ICON_SIZE as i32).contains(&y) {
+        shape[y as usize * ICON_SIZE + x as usize] = false;
+    }
+}
+
 fn fill_icon_rect(
     shape: &mut [bool; ICON_SIZE * ICON_SIZE],
     left: i32,
@@ -497,6 +514,46 @@ fn fill_icon_rect(
     for y in top..=bottom {
         for x in left..=right {
             set_icon_pixel(shape, x, y);
+        }
+    }
+}
+
+fn fill_icon_rounded_rect(
+    shape: &mut [bool; ICON_SIZE * ICON_SIZE],
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    radius: i32,
+) {
+    if radius <= 0 {
+        fill_icon_rect(shape, left, top, right, bottom);
+        return;
+    }
+
+    let radius_x = radius.min(((right - left + 1) / 2).max(1));
+    let radius_y = radius.min(((bottom - top + 1) / 2).max(1));
+    for y in top..=bottom {
+        for x in left..=right {
+            let dx = if x < left + radius_x {
+                left + radius_x - x
+            } else if x > right - radius_x {
+                x - (right - radius_x)
+            } else {
+                0
+            };
+            let dy = if y < top + radius_y {
+                top + radius_y - y
+            } else if y > bottom - radius_y {
+                y - (bottom - radius_y)
+            } else {
+                0
+            };
+            if dx * dx * radius_y * radius_y + dy * dy * radius_x * radius_x
+                <= radius_x * radius_x * radius_y * radius_y
+            {
+                set_icon_pixel(shape, x, y);
+            }
         }
     }
 }
@@ -689,6 +746,23 @@ mod tests {
         let (and_bits, xor_bits) = render_monochrome_icon(IconKind::Play);
         assert!(and_bits.iter().any(|value| *value != 0xFF));
         assert!(xor_bits.iter().any(|value| *value != 0));
+    }
+
+    #[test]
+    fn renders_rounded_taskbar_icon_corners() {
+        let pixel_is_visible = |kind, x: usize, y: usize| {
+            let (and_bits, _) = render_monochrome_icon(kind);
+            let row = ICON_SIZE - 1 - y;
+            let mask = 0x80 >> (x % 8);
+            and_bits[row * ICON_STRIDE + x / 8] & mask == 0
+        };
+
+        assert!(!pixel_is_visible(IconKind::Play, 13, 8));
+        assert!(pixel_is_visible(IconKind::Play, 12, 8));
+        assert!(!pixel_is_visible(IconKind::Pause, 3, 2));
+        assert!(!pixel_is_visible(IconKind::Pause, 5, 2));
+        assert!(pixel_is_visible(IconKind::Pause, 4, 3));
+        assert!(!pixel_is_visible(IconKind::Previous, 11, 2));
     }
 
     #[test]

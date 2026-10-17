@@ -501,6 +501,11 @@ func renderMonochromeIcon(kind taskbarIconKind, size int) ([]byte, []byte) {
 			shape[y*size+x] = true
 		}
 	}
+	clearPixel := func(x, y int) {
+		if x >= 0 && x < size && y >= 0 && y < size {
+			shape[y*size+x] = false
+		}
+	}
 	fillTriangle := func(x0, y0, x1, y1, x2, y2 int) {
 		line := func(ax, ay, bx, by int) {
 			dx := absInt(bx - ax)
@@ -548,19 +553,56 @@ func renderMonochromeIcon(kind taskbarIconKind, size int) ([]byte, []byte) {
 			}
 		}
 	}
+	fillRoundedRect := func(left, top, right, bottom, radius int) {
+		if radius <= 0 {
+			fillRect(left, top, right, bottom)
+			return
+		}
+		radiusX := min(radius, max((right-left+1)/2, 1))
+		radiusY := min(radius, max((bottom-top+1)/2, 1))
+		for y := top; y <= bottom; y++ {
+			for x := left; x <= right; x++ {
+				dx := 0
+				if x < left+radiusX {
+					dx = left + radiusX - x
+				} else if x > right-radiusX {
+					dx = x - (right - radiusX)
+				}
+				dy := 0
+				if y < top+radiusY {
+					dy = top + radiusY - y
+				} else if y > bottom-radiusY {
+					dy = y - (bottom - radiusY)
+				}
+				if dx*dx*radiusY*radiusY+dy*dy*radiusX*radiusX <=
+					radiusX*radiusX*radiusY*radiusY {
+					setPixel(x, y)
+				}
+			}
+		}
+	}
 
 	switch kind {
 	case taskbarIconPrevious:
 		fillTriangle(3, 2, 3, 13, 10, 8)
-		fillRect(11, 2, 12, 13)
+		for _, point := range [][2]int{{3, 2}, {3, 13}, {10, 8}} {
+			clearPixel(point[0], point[1])
+		}
+		fillRoundedRect(11, 2, 12, 13, 1)
 	case taskbarIconNext:
 		fillTriangle(4, 2, 4, 13, 11, 8)
-		fillRect(12, 2, 13, 13)
+		for _, point := range [][2]int{{4, 2}, {4, 13}, {11, 8}} {
+			clearPixel(point[0], point[1])
+		}
+		fillRoundedRect(12, 2, 13, 13, 1)
 	case taskbarIconPause:
-		fillRect(3, 2, 5, 13)
-		fillRect(10, 2, 12, 13)
+		fillRoundedRect(3, 2, 5, 13, 1)
+		fillRoundedRect(10, 2, 12, 13, 1)
 	default:
 		fillTriangle(4, 2, 4, 13, 13, 8)
+		for _, point := range [][2]int{{4, 2}, {4, 13}, {13, 8}} {
+			clearPixel(point[0], point[1])
+		}
 	}
 
 	isShape := func(x, y int) bool {

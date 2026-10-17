@@ -121,3 +121,33 @@ func TestRenderMonochromeIcon(t *testing.T) {
 	}
 	t.Fatal("play icon has no visible pixels")
 }
+
+func TestTaskbarIconsUseRoundedCorners(t *testing.T) {
+	pixelIsVisible := func(kind taskbarIconKind, x, y int) bool {
+		andBits, _ := renderMonochromeIcon(kind, 16)
+		stride := 4
+		row := 16 - 1 - y
+		mask := byte(0x80 >> (x % 8))
+		return andBits[row*stride+x/8]&mask == 0
+	}
+
+	for _, test := range []struct {
+		name      string
+		kind      taskbarIconKind
+		x, y      int
+		wantShown bool
+	}{
+		{"play sharp tip removed", taskbarIconPlay, 13, 8, false},
+		{"play interior retained", taskbarIconPlay, 12, 8, true},
+		{"pause top-left rounded", taskbarIconPause, 3, 2, false},
+		{"pause top-right rounded", taskbarIconPause, 5, 2, false},
+		{"pause interior retained", taskbarIconPause, 4, 3, true},
+		{"previous bar top rounded", taskbarIconPrevious, 11, 2, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := pixelIsVisible(test.kind, test.x, test.y); got != test.wantShown {
+				t.Fatalf("pixel (%d,%d) visible = %v, want %v", test.x, test.y, got, test.wantShown)
+			}
+		})
+	}
+}
