@@ -260,6 +260,18 @@ IOS_UNSIGNED_ONLY=1 ./package_ios.sh
 
 > 注意：`music-dl-ios-unsigned.ipa` 不是可直接安装包，需要用户用自己的证书和 provisioning profile 重签。如果需要 GitHub Actions 自动发布已签名 iOS 包，需要配置 `IOS_PROVISION_PROFILE_BASE64`、`IOS_CERTIFICATE_P12_BASE64` 和 `IOS_CERTIFICATE_PASSWORD`。
 
+#### 4. iOS 白屏或启动后终止排查
+
+发布页同时提供对应 IPA 的 `.sha256` 文件，先确认下载和重签的不是损坏包。网页播放器、图标和 Sakana 组件均已内置到 IPA，不再依赖 jsDelivr；iOS 包还启用了本地网络和 WebView HTTP 兼容配置。如果启动页连续 5 次仍未收到 WebView 桥接确认，会显示包含目标地址、运行环境和最后状态的诊断页，不再无限重载。
+
+LiveContainer 提示 “App returned from its main function with code 0” 时，请按以下顺序排除：
+
+1. 用 SideStore、AltStore 或其他签名工具把**同一个已重签 IPA**直接安装并启动。
+2. 如果直接侧载提示 “This app is in an invalid format”，优先检查 IPA 是否完整、重签证书和 provisioning profile 是否匹配，而不是排查页面代码。
+3. 如果直接侧载正常、只有 LiveContainer 终止，请附上 LiveContainer 版本、iOS 版本，以及“设置 → 隐私与安全 → 分析与改进 → 分析数据”中对应应用的崩溃报告。
+
+LiveContainer 的官方排查说明见 [App crashes](https://livecontainer.github.io/docs/faq/app-crashes)。仅凭“启动即终止”且没有崩溃报告，无法判断是重签包还是容器兼容问题。
+
 **如果你 Fork 了本仓库并希望使用自己的构建流：**
 
 1. 在你的仓库 **Settings** -> **Secrets and variables** -> **Actions** 中添加：

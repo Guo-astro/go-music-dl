@@ -6207,12 +6207,12 @@ const KaraokeLyrics = (() => {
 
 window.KaraokeLyrics = KaraokeLyrics;
 
-// APlayer Config. APlayer 由 CDN 加载，若 CDN 不可达会影响整个脚本；
-// 这里把初始化单独保护起来，避免播放器库缺失导致页面其他功能不可用。
+// APlayer Config. APlayer is bundled with the app. Guard initialization so
+// a player failure cannot interrupt the rest of the page.
 let ap = null;
 try {
   if (typeof APlayer === "undefined") {
-    throw new Error("APlayer CDN 未加载");
+    throw new Error("APlayer 资源未加载");
   }
   ap = new APlayer({
     container: document.getElementById("aplayer"),

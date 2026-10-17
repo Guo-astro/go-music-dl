@@ -10,9 +10,9 @@
     <link rel="stylesheet" href="{{.Root}}/style.css">
     <link rel="stylesheet" href="{{.Root}}/videogen.css">
     
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6/css/all.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sakana-widget@2.7.1/lib/sakana.min.css"/>
+    <link rel="stylesheet" href="{{.Root}}/vendor/aplayer/APlayer.min.css">
+    <link rel="stylesheet" href="{{.Root}}/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="{{.Root}}/vendor/sakana/sakana.min.css"/>
 </head>
 <body>
 
@@ -63,7 +63,7 @@
 {{template "modals" .}}
 
 <div id="aplayer"></div>
-<script src="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.js"></script>
+<script src="{{.Root}}/vendor/aplayer/APlayer.min.js"></script>
 
 <script>
     window.API_ROOT = "{{.Root}}";
@@ -84,7 +84,7 @@
     <div id="sakana-widget"></div>
 </div>
 
-<script async onload="initSakanaWidget()" src="https://cdn.jsdelivr.net/npm/sakana-widget@2.7.1/lib/sakana.min.js"></script>
+<script async onload="initSakanaWidget()" src="{{.Root}}/vendor/sakana/sakana.min.js"></script>
 
 </body>
 </html>

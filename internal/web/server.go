@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -595,6 +596,11 @@ func StartWithOptions(port string, opts StartOptions) {
 	api.GET("/videogen.css", func(c *gin.Context) { c.FileFromFS("templates/static/css/videogen.css", http.FS(templateFS)) })
 	api.GET("/videogen.js", func(c *gin.Context) { c.FileFromFS("templates/static/js/videogen.js", http.FS(templateFS)) })
 	api.GET("/app.js", func(c *gin.Context) { c.FileFromFS("templates/static/js/app.js", http.FS(templateFS)) })
+	vendorAssets, err := embeddedVendorFS()
+	if err != nil {
+		panic(fmt.Sprintf("load embedded vendor assets: %v", err))
+	}
+	api.StaticFS("/vendor", http.FS(vendorAssets))
 	configAPI := bindAuthMiddleware(api, opts)
 	api.Static("/videos", videoDir)
 
@@ -667,6 +673,10 @@ func StartWithOptions(port string, opts StartOptions) {
 	if err := http.Serve(listener, r); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintf(os.Stderr, "Web server stopped with error: %v\n", err)
 	}
+}
+
+func embeddedVendorFS() (fs.FS, error) {
+	return fs.Sub(templateFS, "templates/static/vendor")
 }
 
 func bindAuthMiddleware(api *gin.RouterGroup, opts StartOptions) *gin.RouterGroup {

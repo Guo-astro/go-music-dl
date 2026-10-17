@@ -46,6 +46,9 @@ type desktopApp struct {
 	initialNavReady         bool
 	initialNavSentAt        time.Time
 	initialNavAcked         bool
+	navigationAttempts      int
+	navigationFailed        bool
+	lastWebViewState        string
 	currentWebURL           string
 	reloadPending           bool
 	reloadDeferred          bool
@@ -60,6 +63,7 @@ const (
 	appStateCallback        = "musicDlAppState"
 	preferredBrowserPK      = ""
 	initialNavRetryInterval = 3 * time.Second
+	initialNavMaxAttempts   = 5
 	resumeReloadThreshold   = 2 * time.Second
 )
 
@@ -124,7 +128,10 @@ const bridgeScript = `(function () {
   // 创建的，安装命令可能晚到甚至丢失）。只挂监听器就永远等不到事件，Go 侧
   // 收不到加载确认，会每隔几秒重试导航，把用户刚搜出的结果冲掉。
   // 文档已就绪时直接补发一次确认。
+  // The bridge can be injected after DOMContentLoaded. Acknowledge as soon as
+  // it runs so the native shell does not reload a page that is merely slow.
   console.log("[musicdl-bridge] run readyState=" + document.readyState + " callback=" + (typeof globalThis.callback));
+  notifyAppState("bridge");
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       console.log("[musicdl-bridge] ack via DOMContentLoaded");
@@ -387,7 +394,7 @@ func (a *desktopApp) handlePendingNavigation(gtx layout.Context) {
 	}
 
 	// 首次跳转延后到桥接回调准备完成之后，避免页面过早加载。
-	a.navigateTo(gtx, a.navigationTarget())
+	a.startNavigation(gtx, a.navigationTarget())
 	a.pendingInitialNav = false
 }
 
@@ -397,27 +404,72 @@ func (a *desktopApp) handlePendingReload(gtx layout.Context) {
 	}
 
 	log.Printf("pending reload navigating to %s", a.navigationTarget())
-	a.navigateTo(gtx, a.navigationTarget())
+	a.startNavigation(gtx, a.navigationTarget())
 }
 
 func (a *desktopApp) handleInitialNavigationRecovery(gtx layout.Context) {
-	if !a.initialNavReady || !a.callbackRegistered || a.pendingInitialNav || a.initialNavAcked {
+	switch a.navigationRecoveryAction(time.Now()) {
+	case navigationRecoveryWait:
 		return
-	}
-	if a.initialNavSentAt.IsZero() || time.Since(a.initialNavSentAt) < initialNavRetryInterval {
+	case navigationRecoveryShowDiagnostic:
+		a.navigationFailed = true
+		log.Printf(
+			"webview did not acknowledge after %d attempts; showing in-app diagnostics (last state=%q url=%s)",
+			a.navigationAttempts,
+			a.lastWebViewState,
+			a.navigationTarget(),
+		)
+		a.navigateTo(gtx, navigationDiagnosticDataURL(
+			a.navigationTarget(),
+			a.navigationAttempts,
+			a.lastWebViewState,
+			runtime.GOOS,
+			runtime.GOARCH,
+			runtime.Version(),
+		))
 		return
 	}
 
 	// NavigateCmd can be dropped before the native WebView exists, so keep
-	// retrying until the page explicitly confirms that it loaded.
+	// retrying for a bounded number of attempts until the bridge runs.
 	// InstallJavascriptCmd and MessageReceiverCmd can be dropped the same way:
 	// without the bridge script the page cannot acknowledge, and without the
 	// callback registration the acknowledgement is silently discarded by the
 	// plugin, so re-issue both alongside the navigation.
-	log.Printf("webview load not acknowledged yet, retrying bridge + navigation")
+	log.Printf("webview load not acknowledged yet, retrying bridge + navigation (%d/%d)", a.navigationAttempts+1, initialNavMaxAttempts)
 	a.installBridge(gtx)
 	a.registerCallbacks(gtx)
-	a.navigateTo(gtx, a.navigationTarget())
+	a.startNavigation(gtx, a.navigationTarget())
+}
+
+type navigationRecoveryResult uint8
+
+const (
+	navigationRecoveryWait navigationRecoveryResult = iota
+	navigationRecoveryRetry
+	navigationRecoveryShowDiagnostic
+)
+
+func (a *desktopApp) navigationRecoveryAction(now time.Time) navigationRecoveryResult {
+	if !a.initialNavReady || !a.callbackRegistered || a.pendingInitialNav || a.initialNavAcked || a.navigationFailed {
+		return navigationRecoveryWait
+	}
+	if a.initialNavSentAt.IsZero() || now.Sub(a.initialNavSentAt) < initialNavRetryInterval {
+		return navigationRecoveryWait
+	}
+	if a.navigationAttempts >= initialNavMaxAttempts {
+		return navigationRecoveryShowDiagnostic
+	}
+	return navigationRecoveryRetry
+}
+
+func (a *desktopApp) startNavigation(gtx layout.Context, rawURL string) {
+	if rawURL == "" {
+		return
+	}
+	a.navigationAttempts++
+	a.navigationFailed = false
+	a.navigateTo(gtx, rawURL)
 }
 
 func (a *desktopApp) navigateTo(gtx layout.Context, rawURL string) {
@@ -594,6 +646,16 @@ func (a *desktopApp) handleNavigationEvent(rawURL string) {
 		// the only load acknowledgement available for the startup error page.
 		a.initialNavAcked = true
 		a.reloadPending = false
+		a.navigationAttempts = 0
+		return
+	}
+	if a.navigationFailed {
+		// The retry link in the diagnostic page starts a fresh recovery cycle.
+		log.Printf("navigation resumed from in-app diagnostics: %s", rawURL)
+		a.navigationFailed = false
+		a.navigationAttempts = 1
+		a.initialNavSentAt = time.Now()
+		a.initialNavAcked = false
 	}
 }
 
@@ -607,10 +669,14 @@ func (a *desktopApp) handleSPAURLChange(rawURL string) {
 }
 
 func (a *desktopApp) handleWebViewState(state string) {
+	state = strings.TrimSpace(state)
+	a.lastWebViewState = state
 	log.Printf("webview state: %s", state)
-	switch strings.TrimSpace(state) {
-	case "loaded":
+	switch state {
+	case "bridge", "loaded":
 		a.initialNavAcked = true
+		a.navigationAttempts = 0
+		a.navigationFailed = false
 		a.reloadPending = false
 	}
 }
