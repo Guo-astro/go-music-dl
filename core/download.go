@@ -150,6 +150,9 @@ func BuildDownloadFilename(song *model.Song, ext string, filenameTemplate string
 	source := ""
 	id := ""
 	if song != nil {
+		if GetWebSettings().NormalizeChineseVariants {
+			song = NormalizeSongForDownload(song)
+		}
 		if strings.TrimSpace(song.Name) != "" {
 			name = strings.TrimSpace(song.Name)
 		}

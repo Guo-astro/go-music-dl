@@ -65,6 +65,10 @@ type WebSettings struct {
 	AutoCheckUpdate          bool   `json:"autoCheckUpdate"`
 	AutoSwitchInvalidSources bool   `json:"autoSwitchInvalidSources"`
 	AutoCacheOnPlay          bool   `json:"autoCacheOnPlay"`
+	FilterVersionKeywords    bool   `json:"filterVersionKeywords"`
+	VersionFilterKeywords    string `json:"versionFilterKeywords"`
+	FilterShortTracks        bool   `json:"filterShortTracks"`
+	NormalizeChineseVariants bool   `json:"normalizeChineseVariants"`
 	UpdateRepoURL            string `json:"updateRepoUrl"`
 	GithubProxyEnabled       bool   `json:"githubProxyEnabled"`
 	GithubProxyURL           string `json:"githubProxyUrl"`
@@ -213,6 +217,10 @@ func defaultWebSettings() WebSettings {
 		AutoCheckUpdate:          true,
 		AutoSwitchInvalidSources: true,
 		AutoCacheOnPlay:          false,
+		FilterVersionKeywords:    false,
+		VersionFilterKeywords:    "Live, Remix, Demo",
+		FilterShortTracks:        false,
+		NormalizeChineseVariants: true,
 		UpdateRepoURL:            DefaultUpdateRepoURL,
 		GithubProxyEnabled:       false,
 		GithubProxyURL:           DefaultGithubProxyURL,
@@ -266,6 +274,13 @@ func normalizeWebSettings(settings WebSettings) WebSettings {
 	}
 	if settings.DownloadTipDuration > 60 {
 		settings.DownloadTipDuration = 60
+	}
+	settings.VersionFilterKeywords = strings.TrimSpace(settings.VersionFilterKeywords)
+	if settings.VersionFilterKeywords == "" {
+		settings.VersionFilterKeywords = "Live, Remix, Demo"
+	}
+	if len([]rune(settings.VersionFilterKeywords)) > 240 {
+		settings.VersionFilterKeywords = string([]rune(settings.VersionFilterKeywords)[:240])
 	}
 	settings.UpdateRepoURL = strings.TrimSpace(settings.UpdateRepoURL)
 	if settings.UpdateRepoURL == "" {

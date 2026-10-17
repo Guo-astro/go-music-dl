@@ -1236,8 +1236,10 @@
         this.setPlaybackRate(this.playbackRate);
         
         const sb = document.getElementById('vg-seek-bar');
+        sb.style.setProperty('--vg-progress', '0%');
         sb.oninput = (e) => {
             this.isDraggingProgress = true;
+            e.target.style.setProperty('--vg-progress', `${Number(e.target.value) || 0}%`);
             let audioEl = this.isLocalAudio ? this.localAudio : (window.ap && window.ap.audio);
             if (audioEl && audioEl.duration > 0) {
                 document.getElementById('vg-time-current').textContent = this.formatTime((e.target.value / 100) * audioEl.duration);
@@ -1503,7 +1505,9 @@
         
         if (!this.isDraggingProgress && dur > 0) { 
             const sb = document.getElementById('vg-seek-bar'); 
-            sb.value = (ct/dur)*100; 
+            const progress = Math.max(0, Math.min(100, (ct/dur)*100));
+            sb.value = progress;
+            sb.style.setProperty('--vg-progress', `${progress.toFixed(3)}%`);
             document.getElementById('vg-time-current').textContent = this.formatTime(ct); 
             document.getElementById('vg-time-total').textContent = this.formatTime(dur); 
         }

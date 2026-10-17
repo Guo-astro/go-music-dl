@@ -132,6 +132,15 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 	if defaults.AutoCacheOnPlay {
 		t.Fatalf("default AutoCacheOnPlay should be false")
 	}
+	if defaults.FilterVersionKeywords || defaults.FilterShortTracks {
+		t.Fatalf("default search filters should be disabled: %#v", defaults)
+	}
+	if defaults.VersionFilterKeywords != "Live, Remix, Demo" {
+		t.Fatalf("default VersionFilterKeywords mismatch: %q", defaults.VersionFilterKeywords)
+	}
+	if !defaults.NormalizeChineseVariants {
+		t.Fatal("default NormalizeChineseVariants should be true")
+	}
 	if defaults.UpdateRepoURL != DefaultUpdateRepoURL {
 		t.Fatalf("default UpdateRepoURL mismatch: got %q want %q", defaults.UpdateRepoURL, DefaultUpdateRepoURL)
 	}
@@ -187,6 +196,10 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 		AutoCheckUpdate:          false,
 		AutoSwitchInvalidSources: false,
 		AutoCacheOnPlay:          true,
+		FilterVersionKeywords:    true,
+		VersionFilterKeywords:    "Live; Demo",
+		FilterShortTracks:        true,
+		NormalizeChineseVariants: true,
 		UpdateRepoURL:            "https://github.com/example/fork",
 		GithubProxyEnabled:       true,
 		GithubProxyURL:           "https://gh-proxy.com/",
@@ -224,6 +237,10 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 		AutoCheckUpdate:          false,
 		AutoSwitchInvalidSources: false,
 		AutoCacheOnPlay:          true,
+		FilterVersionKeywords:    true,
+		VersionFilterKeywords:    "Live; Demo",
+		FilterShortTracks:        true,
+		NormalizeChineseVariants: true,
 		UpdateRepoURL:            "https://github.com/example/fork",
 		GithubProxyEnabled:       true,
 		GithubProxyURL:           "https://gh-proxy.com/",

@@ -84,7 +84,9 @@ input[type="password"]:focus { border-color: #10b981; background: #fff; box-shad
     padding: 0 32px; border: none; border-radius: 50px; background: var(--primary-gradient); color: white;
     font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); flex-shrink: 0;
 }
-.search-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); }
+.search-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); }
+.search-btn:disabled { cursor: wait; opacity: 0.78; transform: none; box-shadow: none; }
+.search-btn .fa-spinner { animation-duration: 0.7s; }
 
 .error-msg {
     background: #fff5f5; color: var(--error-color); padding: 12px; border-radius: 8px; margin-bottom: 20px;
@@ -307,6 +309,11 @@ body.batch-mode .song-card { padding-left: 10px; }
 .song-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-active); }
 .song-card.playing-active { border-color: #10b981; background: #eff3ff; transform: scale(1.01); box-shadow: 0 8px 20px rgba(16, 185, 129, 0.25); }
 .song-card.selected { border-color: #10b981; background: #f7fafc; }
+.song-card.locate-flash { animation: locateCurrentTrack 0.9s ease-out; }
+@keyframes locateCurrentTrack {
+    0%, 100% { box-shadow: var(--shadow); }
+    45% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.24), 0 14px 30px rgba(16, 185, 129, 0.32); }
+}
 
 .cover-wrapper { width: 64px; height: 64px; border-radius: 10px; overflow: hidden; flex-shrink: 0; margin-right: 15px; background: #eee; }
 .cover-wrapper img { width: 100%; height: 100%; object-fit: cover; }
@@ -352,6 +359,9 @@ body.batch-mode .song-card { padding-left: 10px; }
 .tag-fail { color: #e53e3e; }
 
 .actions { display: flex; gap: 8px; }
+.mobile-more-actions { display: contents; }
+.actions .mobile-more-toggle { display: none; }
+.mobile-more-toggle[hidden] { display: none !important; }
 .btn-circle { width: 36px; height: 36px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; text-decoration: none; position: relative; z-index: 10; font-size: 14px; }
 .btn-play { background: var(--primary-gradient); color: white; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3); }
 .btn-play:hover { transform: scale(1.1); }
@@ -658,6 +668,7 @@ body.vg-open .aplayer.aplayer-fixed {
     border: none;
     padding: 0;
 }
+.rt-btn[hidden] { display: none !important; }
 .rt-btn:hover { color: #10b981; transform: scale(1.1); }
 .rt-btn:active { transform: scale(0.92); }
 .rt-btn-download-records { position: relative; }
@@ -800,6 +811,21 @@ body.vg-open .aplayer.aplayer-fixed {
     box-sizing: border-box;
 }
 
+.auth-field-hint {
+    margin: -8px 0 0;
+    padding: 10px 12px;
+    border: 1px solid #d1fae5;
+    border-radius: 10px;
+    background: #f0fdf4;
+    color: #047857;
+    font-size: 12px;
+    line-height: 1.55;
+}
+.auth-field-hint code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 .auth-submit {
     min-height: 48px;
     display: inline-flex;
@@ -898,6 +924,25 @@ body.vg-open .aplayer.aplayer-fixed {
     font-size: 12px;
     line-height: 1.5;
 }
+.cookie-capture-guide {
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #1e40af;
+    font-size: 12px;
+    line-height: 1.6;
+}
+.cookie-capture-guide kbd {
+    padding: 1px 5px;
+    border: 1px solid #93c5fd;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: #fff;
+    color: #1e3a8a;
+    font: inherit;
+}
 .settings-panel-subtitle {
     margin: 18px 0 8px;
     color: var(--text-main, #0f172a);
@@ -916,6 +961,11 @@ body.vg-open .aplayer.aplayer-fixed {
 .cookie-item label { display: block; font-size: 12px; color: #718096; margin-bottom: 4px; font-weight: 600; }
 .cookie-item input { width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; box-sizing: border-box; outline: none; }
 .cookie-item input:focus { border-color: #10b981; }
+.cookie-item input:disabled {
+    background: #f1f5f9;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
 .cookie-input-row { display: flex; align-items: center; gap: 8px; }
 .cookie-input-row input { flex: 1; min-width: 0; }
 .cookie-qr-btn {
@@ -1631,7 +1681,15 @@ body.vg-open .aplayer.aplayer-fixed {
     transition: background 0.2s, transform 0.15s;
 }
 
-.player-speed-btn:hover,
+.aplayer.aplayer-fixed.is-empty .player-speed-wrap,
+.aplayer.aplayer-fixed.is-empty .playmode-toggle-btn {
+    display: none !important;
+}
+
+.player-speed-btn:hover {
+    background: #059669;
+}
+
 .player-speed-btn:focus-visible {
     background: #059669;
     outline: 2px solid #064e3b;
@@ -1986,7 +2044,7 @@ body.karaoke-lyrics-active .aplayer .aplayer-lrc p.aplayer-lrc-current {
     .tags { flex-wrap: wrap; }
     .tag { padding: 2px 5px; }
     
-    /* 🌟 手机端完美 3x2 网格，保留全部6个按钮凑双数 */
+    /* 手机端保留主操作，下载类操作收进“更多”按钮。 */
     .actions { 
         display: grid; 
         grid-template-columns: repeat(3, 34px); 
@@ -1994,6 +2052,22 @@ body.karaoke-lyrics-active .aplayer .aplayer-lrc p.aplayer-lrc-current {
         gap: 8px; 
         flex-shrink: 0; 
         justify-content: flex-end; 
+    }
+
+    .mobile-more-actions {
+        display: none;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(3, 34px);
+        grid-auto-rows: 34px;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+    .mobile-more-actions.is-open { display: grid; }
+    .actions .mobile-more-toggle { display: grid; }
+    .mobile-more-toggle.is-open {
+        color: #047857;
+        background: #ecfdf5;
+        border-color: #6ee7b7;
     }
     
     .btn-circle { width: 34px; height: 34px; font-size: 13px; }

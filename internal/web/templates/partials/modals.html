@@ -230,6 +230,42 @@
                     </label>
                     <p class="setting-hint">开启后，在线歌曲开始播放时会后台保存到本地下载目录；默认关闭，避免持续占用储存空间。</p>
                 </div>
+                <div class="cookie-item setting-item search-filter-settings">
+                    <div class="settings-section-heading">
+                        <span class="settings-section-icon"><i class="fa-solid fa-filter"></i></span>
+                        <span>
+                            <strong>搜索结果清理</strong>
+                            <small>在分页和批量操作之前过滤不需要的版本</small>
+                        </span>
+                    </div>
+                    <label class="setting-toggle" for="setting-filter-version-keywords">
+                        <input type="checkbox" id="setting-filter-version-keywords">
+                        <span class="setting-switch" aria-hidden="true"></span>
+                        <span class="setting-toggle-text">按歌名关键词过滤版本</span>
+                    </label>
+                    <p class="setting-hint">匹配歌名中包含关键词的歌曲，不区分英文大小写。</p>
+                </div>
+                <div class="cookie-item">
+                    <label for="setting-version-filter-keywords">版本关键词</label>
+                    <input type="text" id="setting-version-filter-keywords" value="Live, Remix, Demo" maxlength="240" aria-describedby="setting-version-filter-keywords-hint" placeholder="Live, Remix, Demo">
+                    <p id="setting-version-filter-keywords-hint" class="setting-hint" style="margin-left: 0;">可用中文逗号、英文逗号、分号或换行分隔，例如：Live，Remix；Demo。</p>
+                </div>
+                <div class="cookie-item setting-item">
+                    <label class="setting-toggle" for="setting-filter-short-tracks">
+                        <input type="checkbox" id="setting-filter-short-tracks">
+                        <span class="setting-switch" aria-hidden="true"></span>
+                        <span class="setting-toggle-text">过滤时长低于 60 秒的试听版</span>
+                    </label>
+                    <p class="setting-hint">时长未知（0 秒）的歌曲会保留，避免误删正常条目。</p>
+                </div>
+                <div class="cookie-item setting-item">
+                    <label class="setting-toggle" for="setting-normalize-chinese-variants">
+                        <input type="checkbox" id="setting-normalize-chinese-variants">
+                        <span class="setting-switch" aria-hidden="true"></span>
+                        <span class="setting-toggle-text">下载文件名统一为简体中文</span>
+                    </label>
+                    <p class="setting-hint">会清理歌名、歌手和专辑中的零宽字符，并把繁体转为简体。下载去重始终做该归一化，避免“久石让 / 久石讓”重复下载。</p>
+                </div>
                 <button type="button" class="cookie-item setting-item setting-link-row" onclick="openDownloadRecordsModal()">
                     <span class="setting-link-icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
                     <span class="setting-link-body">
@@ -271,12 +307,15 @@
 
             <section id="settings-panel-cookies" class="settings-tab-panel" role="tabpanel" aria-labelledby="settings-tab-cookies" data-settings-panel="cookies" hidden>
                 <p class="settings-panel-hint">Cookie 只保存在当前服务器的配置库中。平台登录后通常可获得更完整的音质和歌单信息。</p>
+                <div class="cookie-capture-guide">
+                    <strong>手动获取 Cookie：</strong>先在新标签页登录下方平台，按 <kbd>F12</kbd> 打开开发者工具并切到“网络”，刷新页面后选择同域请求，在“请求标头”中复制完整的 <code>Cookie</code> 值。只粘贴冒号后的值，不要带 <code>Cookie:</code> 前缀。
+                </div>
                 <div class="cookie-list">
                     {{ range $source := .AllSources }}
                     <div class="cookie-item">
                         <label>{{ $source }}</label>
                         <div class="cookie-input-row">
-                            <input type="text" id="cookie-{{$source}}" placeholder="在此粘贴 Cookie...">
+                            <input type="text" id="cookie-{{$source}}" placeholder="在此粘贴 Cookie..." aria-describedby="cookie-hint-{{$source}}">
                             {{ if eq $source "qq" }}
                             {{ if index $.QRLoginSupported "qq" }}
                             <button type="button" class="cookie-qr-btn" onclick="startQRLogin('qq')"><i class="fa-brands fa-qq"></i> QQ扫码</button>
@@ -290,6 +329,13 @@
                             {{ end }}
                             {{ end }}
                         </div>
+                        {{ with index $.CookieCaptureHints $source }}
+                        <p id="cookie-hint-{{$source}}" class="setting-hint cookie-source-hint">
+                            手动获取：登录 <a href="{{.LoginURL}}" target="_blank" rel="noopener noreferrer">{{ index $.SourceDescriptions $source }}</a>，在开发者工具“网络”面板筛选 <code>{{.Domain}}</code> 的请求并复制完整 Cookie。{{.Hint}}
+                        </p>
+                        {{ else }}
+                        <p id="cookie-hint-{{$source}}" class="setting-hint cookie-source-hint">本地音乐直接从下载目录读取文件，不需要 Cookie。</p>
+                        {{ end }}
                     </div>
                     {{ end }}
                 </div>

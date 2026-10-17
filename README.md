@@ -24,7 +24,6 @@ Go Music DL 是一个音乐搜索与下载工具，支持 **Web 界面**、**TUI
 
 ```bash
 ./music-dl web
-
 ```
 
 Web 服务默认挂载于 `/music` 路径下。如需通过反向代理挂载到二级目录，可使用 `--base-path` 参数：
@@ -60,7 +59,6 @@ Web 模式默认不要求登录即可搜索、播放、下载、浏览歌单 / �
 
 ```bash
 ./music-dl -k "搜索关键词"
-
 ```
 
 ---
@@ -177,7 +175,6 @@ Web 端“设置”里新增了 **下载时内嵌元数据（封面/歌词）** 
 
 ```bash
 ffmpeg -version
-
 ```
 
 常见安装方式：
@@ -281,7 +278,6 @@ docker compose logs -f
 
 # 停止服务
 docker compose down
-
 ```
 
 浏览器访问 `http://localhost:8080`。
@@ -301,7 +297,6 @@ docker compose down
 ```bash
 # 强制在本地使用 Dockerfile 进行构建并启动
 docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
-
 ```
 
 #### 3. 纯命令行模式 (docker run)
@@ -320,7 +315,6 @@ docker run -d --name music-dl \
 
 # Windows PowerShell
 docker run -d --name music-dl -p 8080:8080 -v ${PWD}/data:/home/appuser/data -e TZ=Asia/Shanghai --user 1000:1000 --restart unless-stopped guohuiyuan/go-music-dl:latest ./music-dl web --port 8080 --no-browser
-
 ```
 
 视频生成相关的“更换封面 / 更换音频 / 更换歌词 / 导出视频”按钮已迁移到 Web 设置中管理，默认关闭，可在网页右上角设置面板中开启。
@@ -330,7 +324,6 @@ docker run -d --name music-dl -p 8080:8080 -v ${PWD}/data:/home/appuser/data -e 
 ```bash
 # 搜索
 ./music-dl -k "周杰伦"
-
 ```
 
 TUI 常用按键：
@@ -358,7 +351,6 @@ TUI 常用按键：
 
 # 下载时包含封面和歌词
 ./music-dl -k "周杰伦" --cover --lyrics
-
 ```
 
 ## GitHub Actions 自动构建
@@ -389,7 +381,6 @@ TUI 常用按键：
 ```bat
 cd go-music-dl
 package_app.bat
-
 ```
 
 脚本会自动：
@@ -403,7 +394,6 @@ package_app.bat
 
 ```bat
 adb install -r music-dl.apk
-
 ```
 
 #### 2. Release 流程自动构建 APK
@@ -505,20 +495,20 @@ TUI 在输入界面按 `w` 直接拉取推荐歌单，然后回车进详情。
 
 ## 支持平台
 
-| 平台        | 包名         | 搜索 | 下载 | 歌词 | 歌曲解析 | 歌单搜索 | 歌单推荐 | 歌单分类 | 我的歌单 | 扫码登录    | 歌单歌曲 | 歌单链接解析 | 专辑搜索 | 专辑歌曲 | 专辑链接解析 | 备注                                   |
-| ----------- | ------------ | ---- | ---- | ---- | -------- | -------- | -------- | -------- | -------- | ----------- | -------- | ------------ | -------- | -------- | ------------ | -------------------------------------- |
-| 网易云音乐  | `netease`  | ✅   | ✅   | ✅   | ✅       | ✅       | ✅       | ✅       | ✅       | ✅          | ✅       | ✅           | ✅       | ✅       | ✅           | 支持 FLAC 无损                         |
-| QQ 音乐     | `qq`       | ✅   | ✅   | ✅   | ✅       | ✅       | ✅       | ✅       | ✅       | ✅          | ✅       | ✅           | ✅       | ✅       | ✅           | 支持 FLAC 无损                         |
-| 酷狗音乐    | `kugou`    | ✅   | ✅   | ✅   | ✅       | ✅       | ✅       | ✅       | ✅       | ✅          | ✅       | ✅           | ✅       | ✅       | ✅           | 支持普通歌曲 FLAC 无损                 |
-| 酷我音乐    | `kuwo`     | ✅   | ✅   | ✅   | ✅       | ✅       | ✅       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           |                                        |
-| 咪咕音乐    | `migu`     | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 歌单歌曲使用 MIGUM3 接口               |
-| 千千音乐    | `qianqian` | ✅   | ✅   | ✅   | ✅       | ⚠️     | ❌       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 歌单搜索可能返回空，已知 ID/链接可解析 |
+| 平台        | 包名         | 搜索 | 下载 | 歌词 | 歌曲解析 | 歌单搜索 | 歌单推荐 | 歌单分类 | 我的歌单 | 扫码登录    | 歌单歌曲 | 歌单链接解析 | 专辑搜索 | 专辑歌曲 | 专辑链接解析 | 备注                                                                                                                                                              |
+| ----------- | ------------ | ---- | ---- | ---- | -------- | -------- | -------- | -------- | -------- | ----------- | -------- | ------------ | -------- | -------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 网易云音乐  | `netease`  | ✅   | ✅   | ✅   | ✅       | ✅       | ✅       | ✅       | ✅       | ✅          | ✅       | ✅           | ✅       | ✅       | ✅           | 支持 FLAC 无损                                                                                                                                                    |
+| QQ 音乐     | `qq`       | ✅   | ✅   | ✅   | ✅       | ✅       | ✅       | ✅       | ✅       | ✅          | ✅       | ✅           | ✅       | ✅       | ✅           | 支持 FLAC 无损                                                                                                                                                    |
+| 酷狗音乐    | `kugou`    | ✅   | ✅   | ✅   | ✅       | ✅       | ✅       | ✅       | ✅       | ✅          | ✅       | ✅           | ✅       | ✅       | ✅           | 支持普通歌曲 FLAC 无损                                                                                                                                            |
+| 酷我音乐    | `kuwo`     | ✅   | ✅   | ✅   | ✅       | ✅       | ✅       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           |                                                                                                                                                                   |
+| 咪咕音乐    | `migu`     | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 歌单歌曲使用 MIGUM3 接口                                                                                                                                          |
+| 千千音乐    | `qianqian` | ✅   | ✅   | ✅   | ✅       | ⚠️     | ❌       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 歌单搜索可能返回空，已知 ID/链接可解析                                                                                                                            |
 | 汽水音乐    | `soda`     | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ✅       | ✅       | ⚠️ 未调通 | ✅       | ✅           | ✅       | ✅       | ✅           | 音频解密，Cookie + 内置本机签名器可下会员整曲（装过官方客户端即用，也可配远程签名服务，都没有时为试听片段），支持短链、个人歌单和发现页歌单分类；扫码登录暂未调通 |
-| 5sing       | `fivesing` | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ❌       | ❌       | ❌          | ✅       | ✅           | ❌       | ❌       | ❌           |                                        |
-| Jamendo     | `jamendo`  | ✅   | ✅   | ✅   | ✅       | ⚠️     | ❌       | ❌       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 歌单搜索可能返回空，公开歌单链接可解析 |
-| JOOX        | `joox`     | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 歌单支持 OpenJOOX 接口和网页数据兜底   |
-| Bilibili    | `bilibili` | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ❌       | ❌       | ✅          | ✅       | ✅           | ❌       | ❌       | ❌           | 支持 FLAC 无损                         |
-| Apple Music | `apple`    | ✅   | ⚠️ | ✅   | ✅       | ✅       | ❌       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 下载仅 preview，完整需 gamdl 解密      |
+| 5sing       | `fivesing` | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ❌       | ❌       | ❌          | ✅       | ✅           | ❌       | ❌       | ❌           |                                                                                                                                                                   |
+| Jamendo     | `jamendo`  | ✅   | ✅   | ✅   | ✅       | ⚠️     | ❌       | ❌       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 歌单搜索可能返回空，公开歌单链接可解析                                                                                                                            |
+| JOOX        | `joox`     | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 歌单支持 OpenJOOX 接口和网页数据兜底                                                                                                                              |
+| Bilibili    | `bilibili` | ✅   | ✅   | ✅   | ✅       | ✅       | ❌       | ❌       | ❌       | ✅          | ✅       | ✅           | ❌       | ❌       | ❌           | 支持 FLAC 无损                                                                                                                                                    |
+| Apple Music | `apple`    | ✅   | ⚠️ | ✅   | ✅       | ✅       | ❌       | ✅       | ❌       | ❌          | ✅       | ✅           | ✅       | ✅       | ✅           | 下载仅 preview，完整需 gamdl 解密                                                                                                                                 |
 
 > `⚠️` 表示方法已接入，但平台搜索接口结果不稳定；优先使用已知 ID 或链接解析。
 
@@ -528,7 +518,6 @@ TUI 在输入界面按 `w` 直接拉取推荐歌单，然后回车进详情。
 
 ```bash
 ./music-dl -k "[https://music.163.com/#/song?id=123456](https://music.163.com/#/song?id=123456)"
-
 ```
 
 支持解析的平台：网易云、QQ音乐、酷狗、酷我、咪咕、Bilibili、汽水音乐、5sing、Jamendo、JOOX、千千音乐、Apple Music。
@@ -539,7 +528,6 @@ TUI 在输入界面按 `w` 直接拉取推荐歌单，然后回车进详情。
 
 ```bash
 ./music-dl -k "[https://music.163.com/#/playlist?id=123456](https://music.163.com/#/playlist?id=123456)"
-
 ```
 
 支持解析的平台：网易云、QQ音乐、酷狗、酷我、咪咕、Jamendo、JOOX、千千音乐、汽水音乐、5sing、Bilibili、Apple Music。
@@ -550,7 +538,6 @@ TUI 在输入界面按 `w` 直接拉取推荐歌单，然后回车进详情。
 
 ```bash
 ./music-dl -k "[https://music.163.com/#/album?id=123456](https://music.163.com/#/album?id=123456)"
-
 ```
 
 支持解析的平台：网易云、QQ音乐、酷狗、酷我、咪咕、Jamendo、JOOX、千千音乐、汽水音乐、Apple Music。
@@ -571,7 +558,6 @@ TUI 在输入界面按 `w` 直接拉取推荐歌单，然后回车进详情。
 ```powershell
 # 强制结束残留进程
 taskkill /F /IM music-dl.exe
-
 ```
 
 **Q: 如何构建桌面应用？**
@@ -585,7 +571,6 @@ go build -o desktop/music-dl.exe cmd/music-dl/main.go
 # 2. 构建 Rust 桌面应用
 cd desktop
 cargo build --release
-
 ```
 
 构建纯 Go 的桌面应用
@@ -598,7 +583,6 @@ go build -ldflags="-H windowsgui"
 
 # Linux 
 go build
-
 ```
 
 **Q: 桌面应用支持哪些平台？**
@@ -706,17 +690,7 @@ go-music-dl/
 * **QQ 音乐**: [Suxiaoqinx/qqmusic_flac](https://github.com/Suxiaoqinx/qqmusic_flac) - QQ 音乐 FLAC 解析
 * **逐字歌词展示参考**: [chenmozhijin/LDDC](https://github.com/chenmozhijin/LDDC) - 原文 / 译文 / 罗马音逐字歌词的组织与展示思路参考
 * **汽水音乐接口参考**: [Zencok/baka-plugins](https://github.com/Zencok/baka-plugins) - 汽水音乐搜索、取流和扫码接口参考
-* **汽水音乐整曲方案（特别致敬）**: [sodahub-org/sodam](https://github.com/sodahub-org/sodam) - Cookie + 设备指纹 + 签名（调官方客户端 bdms.node）取整曲的完整实现，本项目汽水会员整曲能力的直接源头
-
-### 特别致敬：[sodahub-org/sodam](https://github.com/sodahub-org/sodam)
-
-go-music-dl 的汽水音乐（会员）整曲下载能做到现在这样，最该感谢的就是 [sodam](https://github.com/sodahub-org/sodam)：
-
-* 它先证明了整曲必须走 `POST /luna/pc/track_v2`，且必须带官方原生组件生成的 `x-helios` / `x-medusa`——缺签名时接口返回的是 HTTP 200 + 空 body，而不是报错；
-* 设备指纹（`device_id` / `iid` / `fp`）与签名头的用法、`GET /config` + `POST /sign` 的签名服务协议，本项目直接沿用了它的约定；
-* 本项目的「本机签名器」同样是它 `mssdk-bridge` 思路的移植：加载官方客户端的 `bdms.node` 生成签名，只是把常驻 HTTP 服务改成了随用随起，能不起服务就不起服务。
-
-向 [sodahub-org](https://github.com/sodahub-org) 的开源工作致敬（AGPL-3.0）。没有 sodam，就没有这里的汽水会员整曲下载。
+* **汽水音乐整曲方案**: [sodahub-org/sodam](https://github.com/sodahub-org/sodam) - Cookie + 设备指纹 + 签名（调官方客户端 bdms.node）取整曲的完整实现，本项目汽水会员整曲能力的直接源头
 
 ## 免责声明
 
