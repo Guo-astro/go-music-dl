@@ -1060,6 +1060,9 @@ func RegisterMusicRoutes(api, configAPI *gin.RouterGroup) {
 				c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 				return
 			}
+			if !result.Skipped {
+				indexSavedLocalMusicFile(result, settings.DownloadDir)
+			}
 
 			webdavError := ""
 			if !result.Skipped && core.WebDAVConfigured(settings) {

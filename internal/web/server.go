@@ -547,7 +547,9 @@ func StartWithOptions(port string, opts StartOptions) {
 	}
 	InitDB()
 	defer CloseDB()
-	syncLocalMusicIndexAsync()
+	// Local music is indexed on demand. Scanning the configured download
+	// directory at startup is expensive on Android, especially when the user
+	// points it at a large shared-storage directory.
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()

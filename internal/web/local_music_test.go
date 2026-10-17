@@ -1035,7 +1035,7 @@ func TestLocalMusicDuplicateEndpointPaginatesGroups(t *testing.T) {
 	}
 }
 
-func TestIndexAutoCachedLocalMusicUpsertsOnlySavedFile(t *testing.T) {
+func TestIndexSavedLocalMusicFileUpsertsOnlySavedFile(t *testing.T) {
 	initCollectionDBForTest(t)
 
 	downloadDir := t.TempDir()
@@ -1048,7 +1048,7 @@ func TestIndexAutoCachedLocalMusicUpsertsOnlySavedFile(t *testing.T) {
 		t.Fatalf("write cached audio: %v", err)
 	}
 
-	indexAutoCachedLocalMusic(&core.DownloadedSong{SavedPath: savedPath}, "")
+	indexSavedLocalMusicFile(&core.DownloadedSong{SavedPath: savedPath}, "")
 
 	var row LocalMusicIndex
 	if err := db.Where("rel_path = ?", "Artist/Cached Song.mp3").First(&row).Error; err != nil {
