@@ -14,6 +14,10 @@ import (
 )
 
 func main() {
+	if _, err := prepareDesktopDataDir(); err != nil {
+		log.Fatalf("desktop data directory setup failed: %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), appshell.ReadyTimeout)
 	defer cancel()
 
