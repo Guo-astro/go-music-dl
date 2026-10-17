@@ -36,11 +36,10 @@ Web 的搜索、试听、下载和歌单浏览无需登录；修改设置或 Coo
 ### Docker
 
 ```bash
-mkdir -p data
 docker compose up -d --pull always --remove-orphans
 ```
 
-访问 `http://localhost:8080`，下载、配置和收藏数据保存在 `./data`。修改源码后可使用 `docker compose -f docker-compose.dev.yml up -d --build` 本地构建。
+访问 `http://localhost:8080`。首次启动会自动创建 `./data` 并配置好容器写权限；Compose 不依赖仓库里的 Dockerfile 或其他文件，只需 `docker-compose.yml` 和镜像即可启动。修改源码后可使用 `docker compose -f docker-compose.dev.yml up -d --build` 本地构建。
 
 ---
 
@@ -423,7 +422,7 @@ go-music-dl/
 ├── desktop/               # 桌面应用 (Rust + Tao/Wry)
 ├── desktop_go/            # 桌面应用 (Go + webview2 )
 ├── desktop_app/           # 移动应用 (Go + Gio )
-├── data/                  # 🌟 统一数据持久化目录 (Docker挂载点)
+├── data/                  # 数据目录，Docker 首次启动时自动创建
 │   ├── downloads/         # 下载的音乐文件
 │   ├── video_output/      # 生成的视频文件
 │   ├── cookies.json       # Cookie 配置文件
