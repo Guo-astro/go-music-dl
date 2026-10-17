@@ -624,6 +624,10 @@ Web 首页歌单入口旁提供“歌单分类”和“我的歌单”。歌单�
 **Q: 桌面版的数据保存在哪里？**
 `desktop_go` 会忽略启动时的工作目录，统一使用系统用户配置目录下的 `music-dl`：设置数据库为 `music-dl/data/settings.db`，Cookie 和默认下载目录也在该数据目录中。macOS 从 Finder 双击启动、Windows 从安装目录启动时都不会再尝试写入只读的当前目录。
 
+### Windows 任务栏缩略图工具栏
+
+Windows 版的 `music-dl-desktop-go.exe` 与 `music-dl-desktop-rust.exe` 均提供任务栏缩略图工具栏。把鼠标移到任务栏图标上即可使用“上一首”“播放/暂停”“下一首”，无需还原或放大播放器窗口。当前没有可播放歌曲时按钮会禁用，播放状态会自动同步为播放或暂停图标。
+
 ## 项目结构
 
 ```text

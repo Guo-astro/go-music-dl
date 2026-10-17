@@ -55,6 +55,12 @@ func main() {
 	}
 	defer w.Destroy()
 	w.SetSize(1350, 780, webview2.Hint(webview2.HintNone))
+	taskbarToolbar, err := installTaskbarToolbar(w)
+	if err != nil {
+		log.Printf("taskbar thumbnail toolbar is unavailable: %v", err)
+	} else {
+		defer taskbarToolbar.Close()
+	}
 	w.Navigate(target)
 	w.Run()
 }

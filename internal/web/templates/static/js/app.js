@@ -5485,6 +5485,44 @@ try {
 
 window.ap = ap;
 
+let lastTaskbarPlaybackState = "";
+
+function syncTaskbarPlaybackState() {
+  const hasTracks = Boolean(ap?.list?.audios?.length);
+  const isPlaying = Boolean(
+    hasTracks && ap?.audio && !ap.audio.paused && !ap.audio.ended,
+  );
+  const nextState = `${hasTracks}:${isPlaying}`;
+  if (nextState === lastTaskbarPlaybackState) return;
+  if (typeof window.musicDlTaskbarState !== "function") return;
+
+  lastTaskbarPlaybackState = nextState;
+  Promise.resolve(window.musicDlTaskbarState(hasTracks, isPlaying)).catch(
+    () => {
+      lastTaskbarPlaybackState = "";
+    },
+  );
+}
+
+window.musicDlTaskbarControl = function (action) {
+  switch (action) {
+    case "previous":
+      switchTrackByOffset(-1);
+      return true;
+    case "toggle":
+      togglePlayback();
+      return true;
+    case "next":
+      switchTrackByOffset(1);
+      return true;
+    default:
+      return false;
+  }
+};
+
+setInterval(syncTaskbarPlaybackState, 500);
+syncTaskbarPlaybackState();
+
 const PLAYER_SPEEDS = Object.freeze([
   0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3,
 ]);
@@ -5786,6 +5824,7 @@ ap.on("listswitch", (e) => {
 
 ap.on("play", () => {
   applyPlayerPlaybackRate(playerSpeed);
+  syncTaskbarPlaybackState();
   const idx = ap?.list?.index;
   const audio = typeof idx === "number" ? ap.list.audios[idx] : null;
   rememberPlaybackHistory(audio);
@@ -5810,6 +5849,7 @@ ap.on("play", () => {
 });
 
 ap.on("pause", () => {
+  syncTaskbarPlaybackState();
   syncAllPlayButtons();
   syncMediaSession();
   if (window.VideoGen && window.VideoGen.updatePlayBtnState) {
@@ -5818,6 +5858,7 @@ ap.on("pause", () => {
 });
 
 ap.on("ended", () => {
+  syncTaskbarPlaybackState();
   currentPlayingId = null;
   window.currentPlayingId = null;
   highlightCard(null);
