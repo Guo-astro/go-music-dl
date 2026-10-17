@@ -1015,7 +1015,8 @@
 
     window.VideoGen = {
       data: null, customVisual: null, lyricTimes: [], lyricRaw: [], lyricGroups: [], lyricMode: 'line', lastActiveIndex: -1,
-      audioCtx: null, analyser: null, sourceNode: null, localSourceNode: null, 
+      audioCtx: null, analyser: null, sourceNode: null, localSourceNode: null,
+      _audioRoutingConnected: false, _localSourceConnected: false,
       isPlaying: false, rtCanvas: null, rtCtx: null, animationId: null, isVideoBg: false,
       resizeObserver: null, isDraggingProgress: false, lyricsAnimationId: null,
       
@@ -1381,35 +1382,66 @@
           if(!this.resizeObserver) { this.resizeObserver = new ResizeObserver(rz); this.resizeObserver.observe(c); }
       },
 
-      initAudioContext: function() {
-          if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-          if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
-          if (!this.analyser) { 
-              this.analyser = this.audioCtx.createAnalyser(); 
-              this.analyser.fftSize = 2048; 
-              this.analyser.smoothingTimeConstant = 0.65; 
+      prepareAudioRouting: function(options = {}) {
+          if (!window.ap || !window.ap.audio) return false;
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) return false;
+          try {
+              if (!this.audioCtx) this.audioCtx = new AudioContextClass();
+              if (!this.analyser) {
+                  this.analyser = this.audioCtx.createAnalyser();
+                  this.analyser.fftSize = 2048;
+                  this.analyser.smoothingTimeConstant = 0.65;
+              }
+              if (!this.sourceNode) {
+                  this.sourceNode = this.audioCtx.createMediaElementSource(window.ap.audio);
+              }
+              if (!this._audioRoutingConnected) {
+                  this.sourceNode.connect(this.analyser);
+                  this.analyser.connect(this.audioCtx.destination);
+                  this._audioRoutingConnected = true;
+              }
+              if (
+                  options.resume &&
+                  (this.audioCtx.state === 'suspended' || this.audioCtx.state === 'interrupted')
+              ) {
+                  const resumeResult = this.audioCtx.resume();
+                  if (resumeResult && typeof resumeResult.catch === 'function') {
+                      resumeResult.catch(error => console.warn("Audio Context Resume Warning:", error));
+                  }
+              }
+              return true;
+          } catch(e) {
+              console.warn("Audio Routing Warning:", e);
+              return false;
           }
       },
+      resumeAudioRouting: function() {
+          return this.prepareAudioRouting({ resume: true });
+      },
+      initAudioContext: function() {
+          return this.prepareAudioRouting({ resume: true });
+      },
       connectAudioSource: function() {
-          if (!this.analyser) return; 
+          if (!this.prepareAudioRouting()) return false;
           try {
               if (this.isLocalAudio) {
                   if (!this.localSourceNode && this.localAudio) {
                       this.localSourceNode = this.audioCtx.createMediaElementSource(this.localAudio);
                   }
-                  if (this.localSourceNode) this.localSourceNode.connect(this.analyser);
-              } else {
-                  if (!window.ap || !window.ap.audio) return;
-                  if (!this.sourceNode) {
-                      this.sourceNode = this.audioCtx.createMediaElementSource(window.ap.audio);
+                  if (this.localSourceNode && !this._localSourceConnected) {
+                      this.localSourceNode.connect(this.analyser);
+                      this._localSourceConnected = true;
                   }
-                  if (this.sourceNode) this.sourceNode.connect(this.analyser);
               }
-              this.analyser.connect(this.audioCtx.destination);
-          } catch(e) { console.warn("Audio Routing Warning:", e); }
+              return true;
+          } catch(e) {
+              console.warn("Audio Routing Warning:", e);
+              return false;
+          }
       },
       startRealtimeVisualizer: function() {
-          this.initAudioContext(); this.connectAudioSource();
+          if (!this.initAudioContext() || !this.connectAudioSource() || !this.analyser) return;
           const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
           const animate = () => {
               if (!this.isPlaying) return; this.animationId = requestAnimationFrame(animate);
@@ -1538,4 +1570,6 @@
         }
       },
     };
+
+    window.VideoGen.prepareAudioRouting();
 })();

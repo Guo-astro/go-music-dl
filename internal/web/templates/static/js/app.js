@@ -5774,6 +5774,7 @@ function setupMediaSession() {
 
   registerMediaSessionAction("play", () => {
     if (!ap?.list?.audios?.length) return;
+    resumeVideoGenAudioRouting();
     ap.play();
   });
   registerMediaSessionAction("pause", () => {
@@ -6233,6 +6234,24 @@ try {
 
 window.ap = ap;
 
+function resumeVideoGenAudioRouting() {
+  const videoGen = window.VideoGen;
+  if (videoGen && typeof videoGen.resumeAudioRouting === "function") {
+    videoGen.resumeAudioRouting();
+  }
+}
+
+// Resume the prepared Web Audio graph during the user's gesture, before
+// APlayer starts playback. This avoids rerouting active audio when the user
+// later opens the player-cover detail view.
+document.addEventListener("pointerdown", resumeVideoGenAudioRouting, {
+  capture: true,
+  passive: true,
+});
+document.addEventListener("keydown", resumeVideoGenAudioRouting, {
+  capture: true,
+});
+
 let lastTaskbarPlaybackState = "";
 
 function syncPlayerTrackControls() {
@@ -6610,6 +6629,7 @@ if (ap && typeof ap.on === "function") {
   });
 
   ap.on("play", () => {
+    resumeVideoGenAudioRouting();
     applyPlayerPlaybackRate(playerSpeed);
     syncTaskbarPlaybackState();
     const idx = ap?.list?.index;
