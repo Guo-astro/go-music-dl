@@ -30,7 +30,7 @@
             <button type="submit" class="search-btn" title="搜索" aria-label="搜索"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></button>
         </div>
 
-        <div style="display: flex; gap: 15px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap;">
+        <div class="quick-actions" style="display: flex; gap: 15px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap;">
             <button type="button" class="btn-pill btn-pill-primary" onclick="goToRecommend()"
                 style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); border: none; box-shadow: 0 4px 15px rgba(255, 154, 158, 0.4); justify-content:center;">
                 <i class="fa-solid fa-fire"></i> 每日推荐歌单
@@ -72,7 +72,7 @@
 
             <div class="source-grid" id="source-grid">
                 {{ range $source := .AllSources }}
-                <label>
+                <label class="source-option">
                     <input type="checkbox" name="sources" value="{{ $source }}" class="source-checkbox"
                         data-playlist-supported="{{ index $.PlaylistSupported $source }}"
                         data-album-supported="{{ index $.AlbumSupported $source }}"

@@ -33,23 +33,25 @@ type desktopApp struct {
 
 	// 这些状态用于在多个 frame 之间协调 WebView 初始化流程，
 	// 因为 Gio 插件命令是在 frame 处理中下发的。
-	bridgeInstalled       bool
-	callbackRegistered    bool
-	storagePermissionOnce bool
-	bundledFFmpegOnce     bool
-	pendingInitialNav     bool
-	pendingHistoryBack    bool
-	pendingExternalOpenTo *url.URL
-	initialNav            <-chan initialNavigationResult
-	initialNavURL         string
-	initialNavReady       bool
-	initialNavSentAt      time.Time
-	initialNavAcked       bool
-	currentWebURL         string
-	reloadPending         bool
-	reloadDeferred        bool
-	playbackActive        bool
-	lastFrameAt           time.Time
+	bridgeInstalled         bool
+	callbackRegistered      bool
+	storagePermissionOnce   bool
+	androidWebViewFocusOnce bool
+	bundledFFmpegOnce       bool
+	pendingInitialNav       bool
+	pendingHistoryBack      bool
+	pendingExternalOpenTo   *url.URL
+	initialNav              <-chan initialNavigationResult
+	initialNavURL           string
+	initialNavReady         bool
+	initialNavSentAt        time.Time
+	initialNavAcked         bool
+	currentWebURL           string
+	reloadPending           bool
+	reloadDeferred          bool
+	playbackActive          bool
+	lastFrameAt             time.Time
+	pendingTVNavigation     []string
 }
 
 const (
@@ -86,6 +88,10 @@ const bridgeScript = `(function () {
       return;
     }
     if (event.key === "BrowserBack") {
+      if (typeof window.__musicDlHandleBack === "function" && window.__musicDlHandleBack()) {
+        event.preventDefault();
+        return;
+      }
       event.preventDefault();
       window.history.back();
       return;
@@ -235,7 +241,14 @@ const bridgeScript = `(function () {
   }, true);
 })();`
 
-const historyBackScript = `if (window.history.length > 1) { window.history.back(); }`
+const historyBackScript = `(function () {
+  if (typeof window.__musicDlHandleBack === "function" && window.__musicDlHandleBack()) {
+    return;
+  }
+  if (window.history.length > 1) {
+    window.history.back();
+  }
+})();`
 
 func main() {
 	path, err := app.DataDir()
@@ -274,6 +287,7 @@ func (a *desktopApp) run() error {
 		case app.ViewEvent:
 			a.configureBundledFFmpeg(evt)
 			a.requestStoragePermission(evt)
+			a.requestAndroidWebViewFocus(evt)
 		case app.FrameEvent:
 			a.handleFrame(evt)
 		}
@@ -297,6 +311,10 @@ func (a *desktopApp) handleFrame(evt app.FrameEvent) {
 	a.lastFrameAt = now
 
 	a.pendingHistoryBack = a.pendingHistoryBack || consumeBackShortcuts(gtx)
+	a.pendingTVNavigation = append(a.pendingTVNavigation, consumeTVNavigationShortcuts(gtx)...)
+	if len(a.pendingTVNavigation) > 12 {
+		a.pendingTVNavigation = a.pendingTVNavigation[len(a.pendingTVNavigation)-12:]
+	}
 	a.consumeWebViewEvents(gtx)
 	a.consumeInitialNavigationResult()
 	a.layoutWebView(gtx)
@@ -307,6 +325,7 @@ func (a *desktopApp) handleFrame(evt app.FrameEvent) {
 	a.handlePendingReload(gtx)
 	a.handleInitialNavigationRecovery(gtx)
 	a.handlePendingHistoryBack(gtx)
+	a.handlePendingTVNavigation(gtx)
 	a.handlePendingExternalOpen(gtx)
 }
 
@@ -464,6 +483,52 @@ func (a *desktopApp) handlePendingHistoryBack(gtx layout.Context) {
 	a.pendingHistoryBack = false
 }
 
+var tvNavigationScripts = map[string]string{
+	"up": `(function () {
+  if (typeof window.__musicDlTVHandleKey === "function") {
+    window.__musicDlTVHandleKey("up");
+  }
+})();`,
+	"down": `(function () {
+  if (typeof window.__musicDlTVHandleKey === "function") {
+    window.__musicDlTVHandleKey("down");
+  }
+})();`,
+	"left": `(function () {
+  if (typeof window.__musicDlTVHandleKey === "function") {
+    window.__musicDlTVHandleKey("left");
+  }
+})();`,
+	"right": `(function () {
+  if (typeof window.__musicDlTVHandleKey === "function") {
+    window.__musicDlTVHandleKey("right");
+  }
+})();`,
+	"enter": `(function () {
+  if (typeof window.__musicDlTVHandleKey === "function") {
+    window.__musicDlTVHandleKey("enter");
+  }
+})();`,
+}
+
+func (a *desktopApp) handlePendingTVNavigation(gtx layout.Context) {
+	if len(a.pendingTVNavigation) == 0 || !a.bridgeInstalled || a.pendingInitialNav {
+		return
+	}
+
+	for _, action := range a.pendingTVNavigation {
+		script := tvNavigationScripts[action]
+		if script == "" {
+			continue
+		}
+		gioplugins.Execute(gtx, giowebview.ExecuteJavascriptCmd{
+			View:   &a.tag,
+			Script: script,
+		})
+	}
+	a.pendingTVNavigation = a.pendingTVNavigation[:0]
+}
+
 func (a *desktopApp) handlePendingExternalOpen(gtx layout.Context) {
 	if a.pendingExternalOpenTo == nil {
 		return
@@ -583,6 +648,44 @@ func consumeBackShortcuts(gtx layout.Context) bool {
 			continue
 		}
 		handled = true
+	}
+}
+
+func consumeTVNavigationShortcuts(gtx layout.Context) []string {
+	if runtime.GOOS != "android" {
+		return nil
+	}
+
+	var actions []string
+	for {
+		evt, ok := gtx.Event(
+			key.Filter{Name: key.NameUpArrow},
+			key.Filter{Name: key.NameDownArrow},
+			key.Filter{Name: key.NameLeftArrow},
+			key.Filter{Name: key.NameRightArrow},
+			key.Filter{Name: key.NameEnter},
+			key.Filter{Name: key.NameReturn},
+		)
+		if !ok {
+			return actions
+		}
+		ke, ok := evt.(key.Event)
+		if !ok || ke.State != key.Press {
+			continue
+		}
+
+		switch ke.Name {
+		case key.NameUpArrow:
+			actions = append(actions, "up")
+		case key.NameDownArrow:
+			actions = append(actions, "down")
+		case key.NameLeftArrow:
+			actions = append(actions, "left")
+		case key.NameRightArrow:
+			actions = append(actions, "right")
+		case key.NameEnter, key.NameReturn:
+			actions = append(actions, "enter")
+		}
 	}
 }
 

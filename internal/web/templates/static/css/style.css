@@ -156,6 +156,303 @@ input[type="password"]:focus { border-color: #10b981; background: #fff; box-shad
     justify-content: flex-start;
     margin: 0 0 10px;
 }
+
+/* Android TV / remote-control layout. JS adds body.tv-ui after TV detection. */
+html.tv-ui {
+    scroll-padding: 48px 72px 190px;
+}
+
+body.tv-ui {
+    padding: clamp(24px, 3vh, 44px) clamp(48px, 4vw, 84px) 190px;
+    background-size: 100% 340px;
+}
+
+body.tv-ui .container {
+    width: 100%;
+    max-width: min(1680px, calc(100vw - clamp(96px, 9vw, 180px)));
+}
+
+body.tv-ui .search-box {
+    padding: 26px 30px 22px;
+    margin-bottom: 22px;
+    border-radius: 24px;
+}
+
+body.tv-ui h1 {
+    margin-bottom: 18px;
+    font-size: clamp(30px, 3.2vw, 48px);
+}
+
+body.tv-ui .search-type-switch {
+    gap: 28px;
+    margin-bottom: 16px;
+}
+
+body.tv-ui .type-option {
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    font-size: clamp(16px, 1.35vw, 20px);
+}
+
+body.tv-ui .type-option input {
+    width: 20px;
+    height: 20px;
+}
+
+body.tv-ui .input-group {
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+body.tv-ui input[type="text"],
+body.tv-ui input[type="password"] {
+    min-height: 54px;
+    font-size: clamp(16px, 1.25vw, 19px);
+}
+
+body.tv-ui .search-btn {
+    min-width: 112px;
+    font-size: 20px;
+}
+
+body.tv-ui .quick-actions {
+    gap: 12px !important;
+    margin-bottom: 16px !important;
+}
+
+body.tv-ui .btn-pill {
+    min-height: 44px;
+    padding: 9px 18px;
+    font-size: clamp(14px, 1.15vw, 17px);
+}
+
+body.tv-ui .source-header {
+    margin-bottom: 10px;
+}
+
+body.tv-ui .source-title,
+body.tv-ui .ctrl-btn {
+    font-size: clamp(13px, 1vw, 15px);
+}
+
+body.tv-ui .source-collapse-btn {
+    min-height: 38px;
+    padding: 4px 6px;
+    border-radius: 8px;
+}
+
+body.tv-ui .source-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+body.tv-ui .source-card {
+    min-height: 54px;
+    justify-content: center;
+    padding: 8px 10px;
+    border-radius: 13px;
+}
+
+body.tv-ui .source-name {
+    margin-bottom: 2px;
+    font-size: clamp(15px, 1.1vw, 17px);
+}
+
+body.tv-ui .source-desc {
+    font-size: clamp(11px, 0.9vw, 13px);
+}
+
+body.tv-ui .right-toolbar {
+    right: clamp(16px, 2vw, 34px);
+    gap: 9px;
+}
+
+body.tv-ui .rt-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+}
+
+body.tv-ui #auth-float-form button {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+}
+
+body.tv-ui .rt-page-num {
+    width: 40px;
+    min-height: 40px;
+    font-size: 14px;
+}
+
+body.tv-ui .sakana-container {
+    display: none !important;
+}
+
+body.tv-ui .playlist-card,
+body.tv-ui .toplist-card,
+body.tv-ui .song-card,
+body.tv-ui .category-chip,
+body.tv-ui .category-source-tab,
+body.tv-ui .collection-item,
+body.tv-ui .btn-circle,
+body.tv-ui .rt-btn,
+body.tv-ui .rt-page-num,
+body.tv-ui .aplayer-button,
+body.tv-ui .aplayer-list-toggle,
+body.tv-ui .vg-ctrl-icon,
+body.tv-ui .vg-close {
+    scroll-margin: 88px 72px 190px;
+}
+
+body.tv-ui .playlist-title,
+body.tv-ui .toplist-title,
+body.tv-ui .song-info h3 {
+    font-size: clamp(15px, 1.12vw, 18px);
+}
+
+body.tv-ui .playlist-author,
+body.tv-ui .toplist-sub,
+body.tv-ui .artist-line {
+    font-size: clamp(12px, 0.95vw, 14px);
+}
+
+body.tv-ui .actions {
+    gap: 10px;
+}
+
+body.tv-ui .btn-circle {
+    width: 42px;
+    height: 42px;
+    font-size: 16px;
+}
+
+body.tv-ui.tv-keyboard-active :focus {
+    outline: 4px solid #fbbf24 !important;
+    outline-offset: 3px !important;
+}
+
+body.tv-ui.tv-keyboard-active .source-option:focus {
+    outline: none !important;
+}
+
+body.tv-ui.tv-keyboard-active .source-option:focus .source-card,
+body.tv-ui.tv-keyboard-active .playlist-card:focus,
+body.tv-ui.tv-keyboard-active .toplist-card:focus,
+body.tv-ui.tv-keyboard-active .song-card:focus,
+body.tv-ui.tv-keyboard-active .btn-pill:focus,
+body.tv-ui.tv-keyboard-active .category-chip:focus,
+body.tv-ui.tv-keyboard-active .category-source-tab:focus,
+body.tv-ui.tv-keyboard-active .collection-item:focus {
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.28), 0 16px 34px rgba(15, 23, 42, 0.2) !important;
+    transform: translateY(-2px) scale(1.012) !important;
+}
+
+body.tv-ui.tv-keyboard-active .type-option:focus {
+    background: #fffbeb;
+    color: #b45309;
+}
+
+body.tv-ui.tv-keyboard-active .btn-circle:focus,
+body.tv-ui.tv-keyboard-active .rt-btn:focus,
+body.tv-ui.tv-keyboard-active .rt-page-num:focus {
+    color: #b45309 !important;
+    box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.28), 0 8px 20px rgba(15, 23, 42, 0.18) !important;
+    transform: scale(1.12);
+}
+
+body.tv-ui.tv-keyboard-active .setting-toggle:focus .setting-switch {
+    box-shadow: 0 0 0 4px #fbbf24;
+}
+
+body.tv-ui .modal-overlay {
+    padding: 30px 64px;
+    box-sizing: border-box;
+}
+
+body.tv-ui .modal {
+    max-width: min(760px, calc(100vw - 160px));
+}
+
+body.tv-ui .settings-modal {
+    width: min(1020px, calc(100vw - 160px));
+    max-width: 1020px;
+    height: min(820px, calc(100vh - 64px));
+    max-height: calc(100vh - 64px);
+}
+
+body.tv-ui .settings-modal-body {
+    padding: 18px 24px 22px;
+}
+
+body.tv-ui .settings-tab {
+    min-height: 46px;
+    font-size: 15px;
+}
+
+body.tv-ui .modal-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 12px;
+}
+
+body.tv-ui .vg-overlay :focus,
+body.tv-ui .vg-overlay :focus-visible {
+    outline: 4px solid #fbbf24 !important;
+    outline-offset: 3px;
+}
+
+@media (max-height: 650px) {
+    body.tv-ui {
+        padding-top: 14px;
+        padding-bottom: 160px;
+    }
+
+    body.tv-ui .search-box {
+        padding: 15px 22px 13px;
+        margin-bottom: 14px;
+    }
+
+    body.tv-ui h1 {
+        margin-bottom: 8px;
+        font-size: 28px;
+    }
+
+    body.tv-ui .search-type-switch {
+        margin-bottom: 8px;
+    }
+
+    body.tv-ui .input-group,
+    body.tv-ui .quick-actions {
+        margin-bottom: 10px !important;
+    }
+
+    body.tv-ui input[type="text"],
+    body.tv-ui input[type="password"] {
+        min-height: 46px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+
+    body.tv-ui .btn-pill {
+        min-height: 38px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+    }
+
+    body.tv-ui .source-card {
+        min-height: 46px;
+    }
+
+    body.tv-ui .source-desc {
+        display: none;
+    }
+}
 .detail-back-button {
     min-height: 34px;
     display: inline-flex;

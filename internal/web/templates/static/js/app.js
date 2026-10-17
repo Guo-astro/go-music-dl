@@ -1786,6 +1786,8 @@ function initializePageContent(root = document) {
   syncMediaSession();
   initializeLocalMusicPage(root);
   scheduleBatchLocalMusicMatch();
+  syncTVFocusableElements(root);
+  scheduleTVInitialFocus();
 }
 
 function setSongListToolsOpen(tools, isOpen) {
@@ -2192,7 +2194,556 @@ function bindPageNavigationEvents() {
   });
 }
 
+const TV_UI_QUERY_PARAM = "tv";
+const TV_FOCUSABLE_ATTRIBUTE = "data-tv-focusable";
+const TV_FOCUSABLE_SELECTOR = '[data-tv-focusable="1"]';
+const TV_INTERACTIVE_SELECTOR = [
+  "a[href]",
+  "button",
+  "input:not([type='hidden'])",
+  "select",
+  "textarea",
+  "summary",
+  "[role='button']",
+  "[role='tab']",
+  "[role='link']",
+  "[onclick]",
+  ".type-option",
+  ".source-option",
+  ".playlist-card",
+  ".song-card",
+  ".setting-toggle",
+  ".setting-link-row",
+  ".collection-item",
+  ".rt-btn",
+  ".rt-page-num",
+  ".aplayer-button",
+  ".aplayer-list-toggle",
+  ".vg-ctrl-icon",
+  ".vg-close",
+].join(",");
+
+let tvUIEnabled = false;
+let tvUIObserver = null;
+let tvInitialFocusTimer = 0;
+let tvActiveOverlay = null;
+let tvRestoreFocusElement = null;
+let tvKeyboardActive = false;
+
+function detectTVUIMode() {
+  const params = new URLSearchParams(window.location.search);
+  const requested = String(params.get(TV_UI_QUERY_PARAM) || "").toLowerCase();
+  if (requested === "1" || requested === "true" || requested === "yes") {
+    return true;
+  }
+  if (requested === "0" || requested === "false" || requested === "no") {
+    return false;
+  }
+
+  const ua = String(navigator.userAgent || "");
+  if (
+    /Android[ _-]?TV|Google[ _-]?TV|Fire[ _-]?TV|Smart[ _-]?TV|SMART-TV|BRAVIA|AFT[A-Z0-9]+|MiTV|MiBOX|NVIDIA[ _-]?SHIELD|Web0S|webOS\.TV/i.test(
+      ua,
+    )
+  ) {
+    return true;
+  }
+
+  try {
+    return (
+      window.matchMedia("(pointer: none)").matches &&
+      window.matchMedia("(min-width: 900px)").matches
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function tvElementVisible(element) {
+  if (!element || !element.isConnected) return false;
+  if (
+    element.hidden ||
+    element.matches(":disabled, [aria-disabled='true']") ||
+    element.closest(
+      "[hidden], [inert], [aria-hidden='true'], [aria-disabled='true']",
+    )
+  ) {
+    return false;
+  }
+  if (
+    element.matches(".source-option") &&
+    element.querySelector(".source-checkbox:disabled")
+  ) {
+    return false;
+  }
+
+  const style = window.getComputedStyle(element);
+  if (
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    style.visibility === "collapse" ||
+    style.pointerEvents === "none" ||
+    Number(style.opacity) === 0
+  ) {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  return rect.width > 1 && rect.height > 1;
+}
+
+function syncTVFocusableElements(root = document) {
+  if (!tvUIEnabled || !root || typeof root.querySelectorAll !== "function") {
+    return;
+  }
+
+  const elements = [];
+  if (root.nodeType === Node.ELEMENT_NODE && root.matches(TV_INTERACTIVE_SELECTOR)) {
+    elements.push(root);
+  }
+  root.querySelectorAll(TV_INTERACTIVE_SELECTOR).forEach((element) => {
+    elements.push(element);
+  });
+
+  elements.forEach((element) => {
+    if (
+      element.matches("input[type='radio'], input[type='checkbox']") &&
+      element.closest("label.type-option, label.setting-toggle")
+    ) {
+      return;
+    }
+
+    const forcedFocusTarget = element.matches("[data-settings-tab]");
+    if (
+      !forcedFocusTarget &&
+      element.hasAttribute("tabindex") &&
+      Number(element.getAttribute("tabindex")) < 0
+    ) {
+      return;
+    }
+    if (!element.hasAttribute("tabindex")) {
+      element.tabIndex = 0;
+    }
+    element.setAttribute(TV_FOCUSABLE_ATTRIBUTE, "1");
+  });
+}
+
+function visibleTVOverlays() {
+  return Array.from(
+    document.querySelectorAll(".modal-overlay, .vg-overlay"),
+  ).filter(tvElementVisible);
+}
+
+function getActiveTVOverlay() {
+  const overlays = visibleTVOverlays();
+  return overlays.length ? overlays[overlays.length - 1] : null;
+}
+
+function getTVFocusCandidates() {
+  syncTVFocusableElements(document);
+  const overlay = getActiveTVOverlay();
+  const scope = overlay || document;
+  return Array.from(scope.querySelectorAll(TV_FOCUSABLE_SELECTOR)).filter(
+    tvElementVisible,
+  );
+}
+
+function activeTVFocusElement() {
+  const active = document.activeElement;
+  if (active && active.matches && active.matches(TV_FOCUSABLE_SELECTOR)) {
+    return active;
+  }
+  if (active && active.closest) {
+    return active.closest(TV_FOCUSABLE_SELECTOR);
+  }
+  return null;
+}
+
+function centerOfRect(rect) {
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  };
+}
+
+function overlapLength(aStart, aEnd, bStart, bEnd) {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+}
+
+function bestTVFocusCandidate(direction, current, candidates) {
+  const currentRect = current.getBoundingClientRect();
+  const currentCenter = centerOfRect(currentRect);
+  let best = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  candidates.forEach((candidate) => {
+    if (candidate === current || !tvElementVisible(candidate)) return;
+    const rect = candidate.getBoundingClientRect();
+    const center = centerOfRect(rect);
+    const dx = center.x - currentCenter.x;
+    const dy = center.y - currentCenter.y;
+
+    let primary = 0;
+    let perpendicular = 0;
+    let overlap = 0;
+    if (direction === "left") {
+      if (dx >= -4) return;
+      primary = -dx;
+      perpendicular = Math.abs(dy);
+      overlap = overlapLength(currentRect.top, currentRect.bottom, rect.top, rect.bottom);
+    } else if (direction === "right") {
+      if (dx <= 4) return;
+      primary = dx;
+      perpendicular = Math.abs(dy);
+      overlap = overlapLength(currentRect.top, currentRect.bottom, rect.top, rect.bottom);
+    } else if (direction === "up") {
+      if (dy >= -4) return;
+      primary = -dy;
+      perpendicular = Math.abs(dx);
+      overlap = overlapLength(currentRect.left, currentRect.right, rect.left, rect.right);
+    } else if (direction === "down") {
+      if (dy <= 4) return;
+      primary = dy;
+      perpendicular = Math.abs(dx);
+      overlap = overlapLength(currentRect.left, currentRect.right, rect.left, rect.right);
+    } else {
+      return;
+    }
+
+    let score = primary + perpendicular * 1.55 - overlap * 0.55;
+    if (overlap <= 0) {
+      score += 120;
+    }
+    if (primary < perpendicular * 0.22) {
+      score += 240;
+    }
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  });
+
+  return best;
+}
+
+function scrollTVFocusIntoView(element) {
+  if (!element || !tvElementVisible(element)) return;
+  const rect = element.getBoundingClientRect();
+  const topSafe = 54;
+  const bottomSafe = Math.max(180, window.innerHeight - 170);
+  if (rect.top >= topSafe && rect.bottom <= bottomSafe) {
+    return;
+  }
+  try {
+    element.scrollIntoView({
+      block: "center",
+      inline: "nearest",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+  } catch (_) {
+    element.scrollIntoView();
+  }
+}
+
+function markTVKeyboardNavigation() {
+  tvKeyboardActive = true;
+  document.body.classList.add("tv-keyboard-active");
+}
+
+function focusTVElement(element) {
+  if (!element || !tvElementVisible(element)) return false;
+  try {
+    element.focus({ preventScroll: true });
+  } catch (_) {
+    element.focus();
+  }
+  markTVKeyboardNavigation();
+  scrollTVFocusIntoView(element);
+  return document.activeElement === element;
+}
+
+function navigateTVFocus(direction) {
+  if (!tvUIEnabled) return false;
+  const candidates = getTVFocusCandidates();
+  if (!candidates.length) return false;
+
+  const current = activeTVFocusElement();
+  if (!current) {
+    focusTVElement(defaultTVFocusTarget(candidates));
+    return true;
+  }
+  const next = bestTVFocusCandidate(direction, current, candidates);
+  if (!next) return false;
+  return focusTVElement(next);
+}
+
+function firstTVFocusMatch(scope, selectors) {
+  for (const selector of selectors) {
+    const match = scope.querySelector(selector);
+    if (match && tvElementVisible(match)) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function defaultTVFocusTarget(candidates) {
+  const overlay = getActiveTVOverlay();
+  const preferred = overlay
+    ? firstTVFocusMatch(overlay, [
+        "[data-tv-autofocus]",
+        ".settings-tab.is-active",
+        ".modal-close",
+        "button",
+        "a[href]",
+        "input:not([type='hidden'])",
+        "select",
+      ])
+    : firstTVFocusMatch(document, [
+        "[data-tv-default-focus]",
+        ".type-option",
+        ".source-option",
+        "#search-keyword",
+        "button",
+        "a[href]",
+      ]);
+  if (preferred && candidates.includes(preferred)) {
+    return preferred;
+  }
+  return candidates[0];
+}
+
+function scheduleTVInitialFocus() {
+  if (!tvUIEnabled) return;
+  window.clearTimeout(tvInitialFocusTimer);
+  tvInitialFocusTimer = window.setTimeout(() => {
+    syncTVFocusableElements(document);
+    const overlay = getActiveTVOverlay();
+    const active = activeTVFocusElement();
+    const activeBelongsInScope =
+      active && (!overlay || overlay.contains(active));
+    if (!activeBelongsInScope) {
+      focusTVElement(defaultTVFocusTarget(getTVFocusCandidates()));
+    }
+  }, 80);
+}
+
+function activateTVElement(element) {
+  if (!element || !tvElementVisible(element)) return false;
+  if (element.matches(".song-card")) {
+    const playButton = element.querySelector(".btn-play");
+    if (playButton) {
+      playButton.click();
+      return true;
+    }
+  }
+  if (element.matches(".collection-item")) {
+    const clickable = element.querySelector(".col-clickable-area");
+    if (clickable) {
+      clickable.click();
+      return true;
+    }
+  }
+  element.click();
+  return true;
+}
+
+function closeTVTopLayer() {
+  if (!tvUIEnabled) return false;
+
+  const videoOverlay = document.getElementById("vg-modal");
+  if (
+    videoOverlay &&
+    tvElementVisible(videoOverlay) &&
+    window.VideoGen &&
+    typeof window.VideoGen.close === "function"
+  ) {
+    window.VideoGen.close();
+    return true;
+  }
+
+  const overlay = getActiveTVOverlay();
+  if (overlay) {
+    const closeButton = overlay.querySelector(
+      "[data-tv-back], .modal-close, [onclick*='style.display = \"none\"'], [onclick*=\"style.display = 'none'\"]",
+    );
+    if (closeButton) {
+      closeButton.click();
+    } else {
+      overlay.style.display = "none";
+    }
+    if (tvRestoreFocusElement && tvElementVisible(tvRestoreFocusElement)) {
+      window.setTimeout(() => focusTVElement(tvRestoreFocusElement), 0);
+    }
+    return true;
+  }
+
+  const openTools = Array.from(
+    document.querySelectorAll(".song-list-tools-popover"),
+  ).find((popover) => !popover.hidden);
+  if (openTools) {
+    closeSongListTools();
+    return true;
+  }
+  return false;
+}
+
+function handleTVMediaKey(key) {
+  if (
+    key === "MediaPlayPause" ||
+    key === "PlayPause" ||
+    key === "MediaPlay" ||
+    key === "MediaPause"
+  ) {
+    togglePlayback();
+    return true;
+  }
+  if (key === "MediaTrackNext" || key === "MediaFastForward") {
+    switchTrackByOffset(1);
+    return true;
+  }
+  if (key === "MediaTrackPrevious" || key === "MediaRewind") {
+    switchTrackByOffset(-1);
+    return true;
+  }
+  return false;
+}
+
+function handleTVNavigationAction(action) {
+  if (!tvUIEnabled) return false;
+  if (
+    action === "up" ||
+    action === "down" ||
+    action === "left" ||
+    action === "right"
+  ) {
+    return navigateTVFocus(action);
+  }
+  if (action === "enter") {
+    return activateTVElement(document.activeElement);
+  }
+  if (action === "back") {
+    return closeTVTopLayer();
+  }
+  if (handleTVMediaKey(action)) {
+    return true;
+  }
+  return false;
+}
+
+function handleTVKeyboardEvent(event) {
+  if (!tvUIEnabled || event.defaultPrevented || event.isComposing) return;
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+  const directionMap = {
+    ArrowUp: "up",
+    ArrowDown: "down",
+    ArrowLeft: "left",
+    ArrowRight: "right",
+  };
+  const direction = directionMap[event.key];
+  const current = document.activeElement;
+  const currentTag = current ? String(current.tagName || "").toLowerCase() : "";
+  const selectingControl =
+    currentTag === "select" ||
+    (current &&
+      current.matches &&
+      current.matches("input[type='range'], input[type='file']"));
+  const editingText =
+    current &&
+    current.matches &&
+    current.matches(
+      "input:not([type='button']):not([type='submit']):not([type='checkbox']):not([type='radio']):not([type='range']), textarea, [contenteditable='true']",
+    );
+
+  if (direction) {
+    if (
+      selectingControl ||
+      (editingText &&
+        currentTag === "textarea" &&
+        (direction === "up" || direction === "down" || direction === "left" || direction === "right")) ||
+      (editingText &&
+        currentTag === "input" &&
+        (direction === "left" || direction === "right"))
+    ) {
+      return;
+    }
+    if (handleTVNavigationAction(direction)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return;
+  }
+
+  if (event.key === "Enter" || event.key === "NumpadEnter") {
+    if (editingText || selectingControl || currentTag === "textarea") {
+      return;
+    }
+    if (handleTVNavigationAction("enter")) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return;
+  }
+
+  if (event.key === "Escape" || event.key === "BrowserBack") {
+    if (handleTVNavigationAction("back")) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return;
+  }
+
+  if (handleTVMediaKey(event.key)) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
+function initializeTVMode() {
+  tvUIEnabled = detectTVUIMode();
+  if (!tvUIEnabled) return;
+
+  document.documentElement.classList.add("tv-ui");
+  document.body.classList.add("tv-ui");
+  syncTVFocusableElements(document);
+  document.addEventListener("keydown", handleTVKeyboardEvent, true);
+  document.addEventListener(
+    "pointerdown",
+    () => {
+      tvKeyboardActive = false;
+      document.body.classList.remove("tv-keyboard-active");
+    },
+    { passive: true },
+  );
+  tvUIObserver = new MutationObserver(() => {
+    syncTVFocusableElements(document);
+    const nextOverlay = getActiveTVOverlay();
+    if (nextOverlay !== tvActiveOverlay) {
+      if (nextOverlay && !tvActiveOverlay) {
+        tvRestoreFocusElement = activeTVFocusElement();
+      }
+      tvActiveOverlay = nextOverlay;
+      scheduleTVInitialFocus();
+    }
+  });
+  tvUIObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "hidden", "style", "aria-hidden"],
+  });
+
+  window.__musicDlTVNavigate = navigateTVFocus;
+  window.__musicDlTVHandleKey = handleTVNavigationAction;
+  window.__musicDlHandleBack = closeTVTopLayer;
+  scheduleTVInitialFocus();
+}
+
 document.addEventListener("DOMContentLoaded", function () {
+  initializeTVMode();
   loadWebSettingsFromCache();
   applyWebSettings(webSettings);
   bindSettingsTabs();
@@ -2201,6 +2752,8 @@ document.addEventListener("DOMContentLoaded", function () {
   fetchWebSettings().finally(() => maybeAutoCheckUpdate());
   bindPageNavigationEvents();
   initializePageContent(document);
+  syncTVFocusableElements(document);
+  scheduleTVInitialFocus();
   updateFloatPageNav();
   // 直接打开搜索结果链接，或 SPA 失败回退到整页加载时，同样把结果滚入视口。
   // 仅在 URL 带搜索词时触发，普通页面加载不受影响。
@@ -5885,24 +6438,26 @@ window.applyPlayerPlaybackRate = applyPlayerPlaybackRate;
 applyPlayerPlaybackRate(playerSpeed);
 
 setupMediaSession();
-ap.audio.addEventListener("timeupdate", () => KaraokeLyrics.update());
-ap.audio.addEventListener("seeked", () => KaraokeLyrics.update());
-ap.audio.addEventListener("loadedmetadata", () => {
-  KaraokeLyrics.load(getCurrentAPlayerAudio());
-  applyPlayerPlaybackRate(playerSpeed);
-});
-ap.audio.addEventListener("emptied", () => {
-  applyPlayerPlaybackRate(playerSpeed);
-});
-ap.audio.addEventListener("play", () =>
-  KaraokeLyrics.handlePlayStateChange(true),
-);
-ap.audio.addEventListener("pause", () =>
-  KaraokeLyrics.handlePlayStateChange(false),
-);
-ap.audio.addEventListener("ended", () =>
-  KaraokeLyrics.handlePlayStateChange(false),
-);
+if (ap?.audio) {
+  ap.audio.addEventListener("timeupdate", () => KaraokeLyrics.update());
+  ap.audio.addEventListener("seeked", () => KaraokeLyrics.update());
+  ap.audio.addEventListener("loadedmetadata", () => {
+    KaraokeLyrics.load(getCurrentAPlayerAudio());
+    applyPlayerPlaybackRate(playerSpeed);
+  });
+  ap.audio.addEventListener("emptied", () => {
+    applyPlayerPlaybackRate(playerSpeed);
+  });
+  ap.audio.addEventListener("play", () =>
+    KaraokeLyrics.handlePlayStateChange(true),
+  );
+  ap.audio.addEventListener("pause", () =>
+    KaraokeLyrics.handlePlayStateChange(false),
+  );
+  ap.audio.addEventListener("ended", () =>
+    KaraokeLyrics.handlePlayStateChange(false),
+  );
+}
 
 // === 播放模式切换按钮 ===
 (function initPlayModeToggle() {
@@ -6011,92 +6566,94 @@ setTimeout(() => {
   }
 }, 800);
 
-ap.on("listswitch", (e) => {
-  const index = e.index;
-  applyPlayerPlaybackRate(playerSpeed);
-  const newAudio = ap.list.audios[index];
-  const playbackCardID = getPlaybackCardID(newAudio);
-  if (playbackCardID) {
-    currentPlayingId = playbackCardID;
-    window.currentPlayingId = currentPlayingId;
-    highlightCard(currentPlayingId);
-    syncAllPlayButtons();
+if (ap && typeof ap.on === "function") {
+  ap.on("listswitch", (e) => {
+    const index = e.index;
+    applyPlayerPlaybackRate(playerSpeed);
+    const newAudio = ap.list.audios[index];
+    const playbackCardID = getPlaybackCardID(newAudio);
+    if (playbackCardID) {
+      currentPlayingId = playbackCardID;
+      window.currentPlayingId = currentPlayingId;
+      highlightCard(currentPlayingId);
+      syncAllPlayButtons();
 
-    const vgModal = document.getElementById("vg-modal");
-    if (vgModal && vgModal.classList.contains("active") && window.VideoGen) {
-      if (
-        !window.VideoGen.data ||
-        window.VideoGen.data.id !== newAudio.custom_id
-      ) {
-        window.VideoGen.open({
-          id: newAudio.custom_id,
-          source: newAudio.source || "netease",
-          name: newAudio.name,
-          artist: newAudio.artist,
-          album: newAudio.album || "",
-          cover: newAudio.cover,
-          duration: parseInt(newAudio.duration) || 0,
-          extra: newAudio.extra || "",
-        });
+      const vgModal = document.getElementById("vg-modal");
+      if (vgModal && vgModal.classList.contains("active") && window.VideoGen) {
+        if (
+          !window.VideoGen.data ||
+          window.VideoGen.data.id !== newAudio.custom_id
+        ) {
+          window.VideoGen.open({
+            id: newAudio.custom_id,
+            source: newAudio.source || "netease",
+            name: newAudio.name,
+            artist: newAudio.artist,
+            album: newAudio.album || "",
+            cover: newAudio.cover,
+            duration: parseInt(newAudio.duration) || 0,
+            extra: newAudio.extra || "",
+          });
+        }
       }
     }
-  }
-  if (
-    newAudio &&
-    newAudio.source !== "local" &&
-    newAudio.source !== "local-file"
-  ) {
-    scheduleAutoCache(newAudio);
-  }
-  syncMediaSession(newAudio || getCurrentAPlayerAudio());
-  scheduleMediaSessionSync(newAudio || getCurrentAPlayerAudio(), 180);
-  KaraokeLyrics.load(newAudio || getCurrentAPlayerAudio());
-});
+    if (
+      newAudio &&
+      newAudio.source !== "local" &&
+      newAudio.source !== "local-file"
+    ) {
+      scheduleAutoCache(newAudio);
+    }
+    syncMediaSession(newAudio || getCurrentAPlayerAudio());
+    scheduleMediaSessionSync(newAudio || getCurrentAPlayerAudio(), 180);
+    KaraokeLyrics.load(newAudio || getCurrentAPlayerAudio());
+  });
 
-ap.on("play", () => {
-  applyPlayerPlaybackRate(playerSpeed);
-  syncTaskbarPlaybackState();
-  const idx = ap?.list?.index;
-  const audio = typeof idx === "number" ? ap.list.audios[idx] : null;
-  rememberPlaybackHistory(audio);
-  const playbackCardID = getPlaybackCardID(audio);
-  if (playbackCardID) {
-    currentPlayingId = playbackCardID;
-    window.currentPlayingId = currentPlayingId;
-    highlightCard(currentPlayingId);
-  }
-  syncAllPlayButtons();
-  syncMediaSession(audio || getCurrentAPlayerAudio());
-  scheduleMediaSessionSync(audio || getCurrentAPlayerAudio(), 180);
-  KaraokeLyrics.load(audio || getCurrentAPlayerAudio());
+  ap.on("play", () => {
+    applyPlayerPlaybackRate(playerSpeed);
+    syncTaskbarPlaybackState();
+    const idx = ap?.list?.index;
+    const audio = typeof idx === "number" ? ap.list.audios[idx] : null;
+    rememberPlaybackHistory(audio);
+    const playbackCardID = getPlaybackCardID(audio);
+    if (playbackCardID) {
+      currentPlayingId = playbackCardID;
+      window.currentPlayingId = currentPlayingId;
+      highlightCard(currentPlayingId);
+    }
+    syncAllPlayButtons();
+    syncMediaSession(audio || getCurrentAPlayerAudio());
+    scheduleMediaSessionSync(audio || getCurrentAPlayerAudio(), 180);
+    KaraokeLyrics.load(audio || getCurrentAPlayerAudio());
 
-  if (audio && audio.source !== "local" && audio.source !== "local-file") {
-    scheduleAutoCache(audio);
-  }
+    if (audio && audio.source !== "local" && audio.source !== "local-file") {
+      scheduleAutoCache(audio);
+    }
 
-  if (window.VideoGen && window.VideoGen.updatePlayBtnState) {
-    window.VideoGen.updatePlayBtnState(true);
-  }
-});
+    if (window.VideoGen && window.VideoGen.updatePlayBtnState) {
+      window.VideoGen.updatePlayBtnState(true);
+    }
+  });
 
-ap.on("pause", () => {
-  syncTaskbarPlaybackState();
-  syncAllPlayButtons();
-  syncMediaSession();
-  if (window.VideoGen && window.VideoGen.updatePlayBtnState) {
-    window.VideoGen.updatePlayBtnState(false);
-  }
-});
+  ap.on("pause", () => {
+    syncTaskbarPlaybackState();
+    syncAllPlayButtons();
+    syncMediaSession();
+    if (window.VideoGen && window.VideoGen.updatePlayBtnState) {
+      window.VideoGen.updatePlayBtnState(false);
+    }
+  });
 
-ap.on("ended", () => {
-  syncTaskbarPlaybackState();
-  currentPlayingId = null;
-  window.currentPlayingId = null;
-  highlightCard(null);
-  syncAllPlayButtons();
-  scheduleMediaSessionSync(getCurrentAPlayerAudio(), 180);
-  KaraokeLyrics.hide();
-});
+  ap.on("ended", () => {
+    syncTaskbarPlaybackState();
+    currentPlayingId = null;
+    window.currentPlayingId = null;
+    highlightCard(null);
+    syncAllPlayButtons();
+    scheduleMediaSessionSync(getCurrentAPlayerAudio(), 180);
+    KaraokeLyrics.hide();
+  });
+}
 
 function highlightCard(targetId) {
   document
