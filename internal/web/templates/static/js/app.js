@@ -2,8 +2,13 @@
 
 const API_ROOT = window.API_ROOT;
 const WEB_SETTINGS_KEY = "musicdl:web_settings";
-const INSPECT_REQUEST_DELAY_MS = 100;
-const INSPECT_MAX_CONCURRENCY = 3;
+const INSPECT_REQUEST_DELAY_MS = 20;
+const INSPECT_MAX_CONCURRENCY = 50;
+const INSPECT_SOURCE_MAX_CONCURRENCY = 32;
+const INSPECT_SOURCE_MIN_CONCURRENCY = 4;
+const INSPECT_RETRY_BASE_DELAY_MS = 1200;
+const INSPECT_RETRY_MAX_DELAY_MS = 30000;
+const INSPECT_MAX_RETRIES = 2;
 const AUTO_SWITCH_INVALID_DELAY_MS = 500;
 const DEFAULT_WEB_PAGE_SIZE = 50;
 const DEFAULT_CLI_PAGE_SIZE = 20;
@@ -1542,11 +1547,11 @@ function bindSearchForm(root = document) {
 
 function bindSongCardCovers(root = document) {
   const cards = root.querySelectorAll(".song-card");
-  cards.forEach((card, index) => {
+  cards.forEach((card) => {
     if (songActionFoldMedia.matches) {
       ensureSongActionFold(card);
     }
-    queueInspectSong(card, index * INSPECT_REQUEST_DELAY_MS);
+    queueInspectSong(card);
 
     const coverWrap = card.querySelector(".cover-wrapper");
     if (!coverWrap) return;
@@ -3721,6 +3726,7 @@ async function inspectSong(card, controller = null) {
   const source = card.dataset.source;
   const duration = card.dataset.duration;
   const extra = card.dataset.extra || "";
+  let retryDelay = 0;
 
   const params = new URLSearchParams({
     id: String(id || ""),
@@ -3737,7 +3743,12 @@ async function inspectSong(card, controller = null) {
     });
     if (signal && signal.aborted) return;
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      const error = new Error(`HTTP ${response.status}`);
+      error.httpStatus = response.status;
+      error.retryAfterMs = parseInspectRetryAfter(
+        response.headers.get("Retry-After"),
+      );
+      throw error;
     }
 
     const data = await response.json();
@@ -3748,6 +3759,9 @@ async function inspectSong(card, controller = null) {
       typeof data !== "object"
     ) {
       return;
+    }
+    if (typeof data.valid !== "boolean") {
+      throw new Error("invalid inspect response");
     }
 
     if (data.song && typeof data.song === "object") {
@@ -3763,9 +3777,13 @@ async function inspectSong(card, controller = null) {
       card.querySelector('[id^="bitrate-"]');
 
     if (data.valid) {
+      inspectRetryCounts.delete(card);
+      delete card.dataset.inspectRetryable;
+      card.dataset.inspectCompleted = "1";
       if (sizeTag) {
         sizeTag.textContent = data.size;
         sizeTag.className = "tag tag-success";
+        sizeTag.removeAttribute("title");
       }
       if (bitrateTag) {
         bitrateTag.textContent = data.bitrate;
@@ -3781,7 +3799,29 @@ async function inspectSong(card, controller = null) {
           ),
         );
       }
+      recordInspectSourceSuccess(source);
+    } else if (data.retryable === true || data.status === "retryable") {
+      const suggestedDelay = Math.max(
+        parsePositiveInt(data.retry_after_ms, 0),
+        parseInspectRetryAfter(response.headers.get("Retry-After")),
+      );
+      retryDelay = recordInspectSourcePressure(source, suggestedDelay);
+      card.dataset.inspectRetryable = "1";
+      if (sizeTag) {
+        sizeTag.textContent = "稍后重试";
+        sizeTag.className = "tag tag-loading";
+        sizeTag.title = data.reason
+          ? `平台暂不可用：${data.reason}`
+          : "平台暂不可用";
+      }
+      if (bitrateTag) {
+        bitrateTag.textContent = "-";
+        bitrateTag.className = "tag";
+      }
     } else {
+      inspectRetryCounts.delete(card);
+      delete card.dataset.inspectRetryable;
+      card.dataset.inspectCompleted = "1";
       if (sizeTag) {
         sizeTag.textContent = "无效";
         sizeTag.className = "tag tag-fail";
@@ -3803,20 +3843,34 @@ async function inspectSong(card, controller = null) {
     ) {
       return;
     }
+    retryDelay = recordInspectSourcePressure(
+      source,
+      parsePositiveInt(error?.retryAfterMs, 0),
+    );
     const el = card.querySelector('[id^="size-"]');
     if (el) el.textContent = "检测失败";
   } finally {
     setSongInspectLoading(card, false);
     delete card.dataset.inspectPending;
     if (
+      retryDelay > 0 &&
+      card.isConnected &&
+      (!signal || !signal.aborted)
+    ) {
+      const preparedRetryDelay = prepareInspectRetry(card, retryDelay);
+      if (preparedRetryDelay > 0) {
+        scheduleInspectRetry(card, preparedRetryDelay);
+      }
+    }
+    if (controller) {
+      finishInspectSong(controller);
+    }
+    if (
       card.isConnected &&
       (!signal || !signal.aborted) &&
       document.querySelector(".tag-fail")
     ) {
       scheduleAutoSwitchInvalidSources();
-    }
-    if (controller) {
-      finishInspectSong(controller);
     }
   }
 }
@@ -3825,30 +3879,201 @@ const inspectReadyQueue = [];
 const inspectPendingTimers = new Set();
 const inspectPendingCards = new Set();
 const inspectActiveRequests = new Map();
+const inspectSourceStates = new Map();
+let inspectRetryCounts = new WeakMap();
+let inspectPumpTimer = 0;
+let inspectPumpAt = 0;
+
+function inspectNow() {
+  return window.performance && typeof window.performance.now === "function"
+    ? window.performance.now()
+    : Date.now();
+}
+
+function parseInspectRetryAfter(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric >= 0) {
+    return Math.min(INSPECT_RETRY_MAX_DELAY_MS, Math.round(numeric * 1000));
+  }
+  const timestamp = Date.parse(String(value));
+  if (!Number.isFinite(timestamp)) return 0;
+  return Math.max(
+    0,
+    Math.min(INSPECT_RETRY_MAX_DELAY_MS, timestamp - Date.now()),
+  );
+}
+
+function getInspectSourceState(source) {
+  const key = String(source || "unknown");
+  let state = inspectSourceStates.get(key);
+  if (!state) {
+    const local = isLocalMusicSourceValue(key);
+    state = {
+      active: 0,
+      maxConcurrency: local
+        ? INSPECT_MAX_CONCURRENCY
+        : INSPECT_SOURCE_MAX_CONCURRENCY,
+      nextAvailableAt: 0,
+      cooldownUntil: 0,
+      successStreak: 0,
+      failureCount: 0,
+    };
+    inspectSourceStates.set(key, state);
+  }
+  return state;
+}
+
+function recordInspectSourceSuccess(source) {
+  const state = getInspectSourceState(source);
+  state.failureCount = 0;
+  state.successStreak++;
+  if (
+    !isLocalMusicSourceValue(source) &&
+    state.maxConcurrency < INSPECT_SOURCE_MAX_CONCURRENCY &&
+    state.successStreak >= 5
+  ) {
+    state.maxConcurrency++;
+    state.successStreak = 0;
+  }
+}
+
+function recordInspectSourcePressure(source, requestedDelay = 0) {
+  if (isLocalMusicSourceValue(source)) return 0;
+  const state = getInspectSourceState(source);
+  state.successStreak = 0;
+  const now = inspectNow();
+  if (now >= state.cooldownUntil) {
+    state.failureCount = Math.min(5, state.failureCount + 1);
+    state.maxConcurrency = Math.max(
+      INSPECT_SOURCE_MIN_CONCURRENCY,
+      Math.floor(state.maxConcurrency / 2),
+    );
+    const exponentialDelay = Math.min(
+      INSPECT_RETRY_MAX_DELAY_MS,
+      INSPECT_RETRY_BASE_DELAY_MS * 2 ** (state.failureCount - 1),
+    );
+    const delay = Math.max(
+      parsePositiveInt(requestedDelay, 0),
+      exponentialDelay + Math.floor(Math.random() * 350),
+    );
+    state.cooldownUntil = now + delay;
+  } else if (requestedDelay > 0) {
+    state.cooldownUntil = Math.max(
+      state.cooldownUntil,
+      now + parsePositiveInt(requestedDelay, 0),
+    );
+  }
+  state.nextAvailableAt = Math.max(state.nextAvailableAt, state.cooldownUntil);
+  return Math.max(0, state.cooldownUntil - now);
+}
+
+function prepareInspectRetry(card, requestedDelay) {
+  if (!card || !card.isConnected) return 0;
+  const retries = inspectRetryCounts.get(card) || 0;
+  if (retries >= INSPECT_MAX_RETRIES) return 0;
+  inspectRetryCounts.set(card, retries + 1);
+  card.dataset.inspectRetryAttempt = String(retries + 1);
+  return Math.min(
+    INSPECT_RETRY_MAX_DELAY_MS,
+    Math.max(
+      parsePositiveInt(requestedDelay, 0),
+      INSPECT_RETRY_BASE_DELAY_MS * 2 ** retries,
+    ) + Math.floor(Math.random() * 350),
+  );
+}
+
+function scheduleInspectRetry(card, delay) {
+  if (!card || delay <= 0) return;
+  const timer = window.setTimeout(() => {
+    inspectPendingTimers.delete(timer);
+    if (!card.isConnected) return;
+    queueInspectSong(card, 0);
+  }, delay);
+  inspectPendingTimers.add(timer);
+}
 
 function pumpInspectQueue() {
   while (
     inspectActiveRequests.size < INSPECT_MAX_CONCURRENCY &&
     inspectReadyQueue.length > 0
   ) {
-    const card = inspectReadyQueue.shift();
-    if (!card || !card.isConnected) {
-      if (card) {
-        delete card.dataset.inspectPending;
-        inspectPendingCards.delete(card);
+    const now = inspectNow();
+    let selectedIndex = -1;
+    let selectedSource = "";
+    let earliestWait = Infinity;
+
+    for (let index = 0; index < inspectReadyQueue.length; index++) {
+      const candidate = inspectReadyQueue[index];
+      if (!candidate?.isConnected) {
+        if (candidate) {
+          delete candidate.dataset.inspectPending;
+          inspectPendingCards.delete(candidate);
+        }
+        inspectReadyQueue.splice(index, 1);
+        index--;
+        continue;
       }
-      continue;
+
+      const source = candidate.dataset.source || "unknown";
+      const state = getInspectSourceState(source);
+      if (state.active >= state.maxConcurrency) continue;
+      const availableAt = Math.max(
+        state.cooldownUntil,
+        state.nextAvailableAt,
+      );
+      if (availableAt > now) {
+        earliestWait = Math.min(earliestWait, availableAt - now);
+        continue;
+      }
+      selectedIndex = index;
+      selectedSource = source;
+      break;
     }
 
+    if (selectedIndex < 0) {
+      if (Number.isFinite(earliestWait)) {
+        scheduleInspectPump(earliestWait);
+      }
+      return;
+    }
+
+    const card = inspectReadyQueue.splice(selectedIndex, 1)[0];
+    const state = getInspectSourceState(selectedSource);
     const controller = new AbortController();
-    inspectActiveRequests.set(controller, card);
+    inspectActiveRequests.set(controller, {
+      card,
+      source: selectedSource,
+    });
+    state.active++;
+    state.nextAvailableAt = now + INSPECT_REQUEST_DELAY_MS;
     setSongInspectLoading(card, true);
     void inspectSong(card, controller);
   }
 }
 
+function scheduleInspectPump(delay = 0) {
+  const now = inspectNow();
+  const at = now + Math.max(0, delay);
+  if (inspectPumpTimer && inspectPumpAt <= at) return;
+  if (inspectPumpTimer) {
+    window.clearTimeout(inspectPumpTimer);
+  }
+  inspectPumpAt = at;
+  inspectPumpTimer = window.setTimeout(() => {
+    inspectPumpTimer = 0;
+    inspectPumpAt = 0;
+    pumpInspectQueue();
+  }, Math.max(0, delay));
+}
+
 function finishInspectSong(controller) {
-  if (!inspectActiveRequests.delete(controller)) return;
+  const task = inspectActiveRequests.get(controller);
+  if (!task) return;
+  inspectActiveRequests.delete(controller);
+  inspectPendingCards.delete(task.card);
+  const state = getInspectSourceState(task.source);
+  state.active = Math.max(0, state.active - 1);
   pumpInspectQueue();
 }
 
@@ -3861,25 +4086,53 @@ function cancelPendingSongInspections() {
   });
   inspectPendingCards.clear();
   inspectReadyQueue.length = 0;
+  inspectRetryCounts = new WeakMap();
 
-  inspectActiveRequests.forEach((card, controller) => {
+  if (inspectPumpTimer) {
+    window.clearTimeout(inspectPumpTimer);
+    inspectPumpTimer = 0;
+    inspectPumpAt = 0;
+  }
+
+  inspectActiveRequests.forEach((task, controller) => {
+    const card = task.card;
     delete card.dataset.inspectPending;
     setSongInspectLoading(card, false);
     controller.abort();
   });
   inspectActiveRequests.clear();
+  inspectSourceStates.forEach((state) => {
+    state.active = 0;
+  });
 }
 
-function queueInspectSong(card, delay = INSPECT_REQUEST_DELAY_MS) {
+function queueInspectSong(card, delay = 0) {
   if (
     !card ||
-    !card.isConnected ||
-    card.dataset.inspectPending === "1"
+    !card.isConnected
   ) {
     return;
   }
+  const inspectKey = [
+    card.dataset.source || "",
+    card.dataset.id || "",
+    card.dataset.extra || "",
+  ].join(":");
+  if (card.dataset.inspectKey !== inspectKey) {
+    card.dataset.inspectKey = inspectKey;
+    delete card.dataset.inspectCompleted;
+    inspectRetryCounts.delete(card);
+  }
+  if (card.dataset.inspectPending === "1") return;
+  if (card.dataset.inspectCompleted === "1") return;
+
   card.dataset.inspectPending = "1";
   inspectPendingCards.add(card);
+  if (delay <= 0) {
+    inspectReadyQueue.push(card);
+    scheduleInspectPump(0);
+    return;
+  }
   const timer = window.setTimeout(() => {
     inspectPendingTimers.delete(timer);
     if (!card.isConnected) {
@@ -3887,9 +4140,8 @@ function queueInspectSong(card, delay = INSPECT_REQUEST_DELAY_MS) {
       delete card.dataset.inspectPending;
       return;
     }
-    inspectPendingCards.delete(card);
     inspectReadyQueue.push(card);
-    pumpInspectQueue();
+    scheduleInspectPump(0);
   }, Math.max(0, delay));
   inspectPendingTimers.add(timer);
 }
@@ -7424,10 +7676,6 @@ function isAutoSwitchInvalidSourcesEnabled() {
   return webSettings.autoSwitchInvalidSources !== false;
 }
 
-function hasPendingSongInspections() {
-  return !!document.querySelector('.song-card[data-inspect-pending="1"]');
-}
-
 function getInvalidSongCards(root = document) {
   const seen = new Set();
   const cards = [];
@@ -7520,9 +7768,7 @@ function scheduleAutoSwitchInvalidSources(
     autoSwitchInvalidPending = true;
     return;
   }
-  if (autoSwitchInvalidTimer) {
-    window.clearTimeout(autoSwitchInvalidTimer);
-  }
+  if (autoSwitchInvalidTimer) return;
   autoSwitchInvalidTimer = window.setTimeout(
     () => {
       autoSwitchInvalidTimer = 0;
@@ -7538,11 +7784,6 @@ async function autoSwitchInvalidSources() {
     autoSwitchInvalidPending = true;
     return false;
   }
-  if (hasPendingSongInspections()) {
-    scheduleAutoSwitchInvalidSources(AUTO_SWITCH_INVALID_DELAY_MS);
-    return false;
-  }
-
   const invalidCards = getInvalidSongCards();
   if (invalidCards.length === 0) return false;
 

@@ -515,16 +515,22 @@ func TestDefaultPageSizePrompts(t *testing.T) {
 	}
 }
 
-func TestInspectQueueIsBoundedAndCancelable(t *testing.T) {
+func TestInspectQueueUsesAdaptivePerSourceLimitingAndIsCancelable(t *testing.T) {
 	content, err := templateFS.ReadFile("templates/static/js/app.js")
 	if err != nil {
 		t.Fatalf("ReadFile(app.js): %v", err)
 	}
 	js := string(content)
 	for _, want := range []string{
-		`const INSPECT_MAX_CONCURRENCY = 3;`,
+		`const INSPECT_REQUEST_DELAY_MS = 20;`,
+		`const INSPECT_MAX_CONCURRENCY = 50;`,
+		`const INSPECT_SOURCE_MAX_CONCURRENCY = 32;`,
+		`const INSPECT_SOURCE_MIN_CONCURRENCY = 4;`,
 		`const inspectActiveRequests = new Map();`,
 		`inspectActiveRequests.size < INSPECT_MAX_CONCURRENCY`,
+		`const inspectSourceStates = new Map();`,
+		`function recordInspectSourcePressure(source, requestedDelay = 0)`,
+		`function scheduleInspectPump(delay = 0)`,
 		`function cancelPendingSongInspections()`,
 		`controller.abort();`,
 	} {

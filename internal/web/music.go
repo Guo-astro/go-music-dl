@@ -522,6 +522,119 @@ func formatTopListPlayCount(count int64) string {
 	}
 }
 
+func inspectRetryAfterDelay(resp *http.Response) time.Duration {
+	if resp == nil {
+		return 0
+	}
+	value := strings.TrimSpace(resp.Header.Get("Retry-After"))
+	if value == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	if retryAt, err := http.ParseTime(value); err == nil {
+		delay := time.Until(retryAt)
+		if delay > 0 {
+			return delay
+		}
+	}
+	return 0
+}
+
+func inspectFailurePayload(retryable bool, reason string, retryAfter time.Duration) gin.H {
+	payload := gin.H{
+		"valid":     false,
+		"retryable": retryable,
+		"reason":    reason,
+		"status":    "invalid",
+	}
+	if retryable {
+		payload["status"] = "retryable"
+	}
+	if retryAfter > 0 {
+		payload["retry_after_ms"] = int64(retryAfter / time.Millisecond)
+	}
+	return payload
+}
+
+func defaultInspectRetryDelay(statusCode int) time.Duration {
+	switch statusCode {
+	case http.StatusTooManyRequests:
+		return 3 * time.Second
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return 5 * time.Second
+	case http.StatusRequestTimeout, http.StatusTooEarly:
+		return 2 * time.Second
+	}
+	if statusCode >= 500 {
+		return 2 * time.Second
+	}
+	return time.Second
+}
+
+func inspectHTTPFailure(statusCode int, retryAfter time.Duration) gin.H {
+	if statusCode == http.StatusNotFound || statusCode == http.StatusGone {
+		return inspectFailurePayload(false, "not_found", 0)
+	}
+	reason := "temporary_failure"
+	switch {
+	case statusCode == http.StatusTooManyRequests:
+		reason = "rate_limited"
+	case statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden:
+		reason = "access_denied"
+	case statusCode >= 500:
+		reason = "upstream_unavailable"
+	}
+	if retryAfter <= 0 {
+		retryAfter = defaultInspectRetryDelay(statusCode)
+	}
+	payload := inspectFailurePayload(true, reason, retryAfter)
+	payload["http_status"] = statusCode
+	return payload
+}
+
+func isDefinitiveInspectResolutionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"not found",
+		"does not exist",
+		"no such song",
+		"no playable",
+		"track unavailable",
+		"song unavailable",
+		"不存在",
+		"无版权",
+		"没有版权",
+		"无法播放",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func inspectResolutionFailure(err error) gin.H {
+	if isDefinitiveInspectResolutionError(err) {
+		return inspectFailurePayload(false, "not_found", 0)
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "429") ||
+		strings.Contains(message, "too many requests") ||
+		strings.Contains(message, "rate limit") {
+		return inspectFailurePayload(true, "rate_limited", 3*time.Second)
+	}
+	if strings.Contains(message, "timeout") ||
+		strings.Contains(message, "deadline exceeded") {
+		return inspectFailurePayload(true, "upstream_timeout", 2*time.Second)
+	}
+	return inspectFailurePayload(true, "resolution_failed", 1500*time.Millisecond)
+}
+
 func RegisterMusicRoutes(api, configAPI *gin.RouterGroup) {
 
 	api.GET("/", func(c *gin.Context) {
@@ -916,46 +1029,59 @@ func RegisterMusicRoutes(api, configAPI *gin.RouterGroup) {
 			sodaInst := core.NewSodaClient(cookie)
 			info, sErr := sodaInst.GetDownloadInfo(&model.Song{ID: id, Source: src})
 			if sErr != nil {
-				c.JSON(200, gin.H{"valid": false})
+				c.JSON(200, inspectResolutionFailure(sErr))
 				return
 			}
 			urlStr = info.URL
 		} else {
 			fn := core.GetDownloadFunc(src)
 			if fn == nil {
-				c.JSON(200, gin.H{"valid": false})
+				c.JSON(200, inspectFailurePayload(false, "source_unsupported", 0))
 				return
 			}
 			urlStr, err = fn(&model.Song{ID: id, Source: src, Extra: extra})
-			if err != nil || urlStr == "" {
-				c.JSON(200, gin.H{"valid": false})
+			if err != nil {
+				c.JSON(200, inspectResolutionFailure(err))
+				return
+			}
+			if urlStr == "" {
+				c.JSON(200, inspectFailurePayload(false, "empty_download_url", 0))
 				return
 			}
 		}
 
 		req, reqErr := core.BuildSourceRequest("GET", urlStr, src, "bytes=0-1")
 		if reqErr != nil {
-			c.JSON(200, gin.H{"valid": false})
+			c.JSON(200, inspectFailurePayload(true, "media_request_failed", time.Second))
 			return
 		}
 
-		client := &http.Client{Timeout: 5 * time.Second}
+		client := &http.Client{Timeout: 4 * time.Second}
 		resp, err := client.Do(req)
 
 		valid := false
 		var size int64 = 0
 
-		if err == nil {
-			defer resp.Body.Close()
-			if resp.StatusCode == 200 || resp.StatusCode == 206 {
-				valid = true
-				cr := resp.Header.Get("Content-Range")
-				if parts := strings.Split(cr, "/"); len(parts) == 2 {
-					size, _ = strconv.ParseInt(parts[1], 10, 64)
-				} else {
-					size = resp.ContentLength
-				}
+		if err != nil {
+			c.JSON(200, inspectFailurePayload(true, "media_unreachable", 2*time.Second))
+			return
+		}
+		if resp == nil {
+			c.JSON(200, inspectFailurePayload(true, "media_unreachable", 2*time.Second))
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 || resp.StatusCode == 206 {
+			valid = true
+			cr := resp.Header.Get("Content-Range")
+			if parts := strings.Split(cr, "/"); len(parts) == 2 {
+				size, _ = strconv.ParseInt(parts[1], 10, 64)
+			} else {
+				size = resp.ContentLength
 			}
+		} else {
+			c.JSON(200, inspectHTTPFailure(resp.StatusCode, inspectRetryAfterDelay(resp)))
+			return
 		}
 
 		bitrate := "-"
@@ -969,6 +1095,7 @@ func RegisterMusicRoutes(api, configAPI *gin.RouterGroup) {
 
 		c.JSON(200, gin.H{
 			"valid":   valid,
+			"status":  "valid",
 			"url":     urlStr,
 			"size":    core.FormatSize(size),
 			"bitrate": bitrate,
