@@ -20,7 +20,7 @@ const (
 	DefaultWebDownloadDir           = "data/downloads"
 	DefaultDownloadFilenameTemplate = "{artist} - {name}"
 	DefaultWebAuthUsername          = "admin"
-	DefaultWebPageSize              = 200
+	DefaultWebPageSize              = 50
 	DefaultCLIPageSize              = 20
 	DefaultWebConcurrency           = 3
 	DefaultDownloadTipDuration      = 8

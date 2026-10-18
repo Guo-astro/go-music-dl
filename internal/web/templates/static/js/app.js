@@ -3,8 +3,9 @@
 const API_ROOT = window.API_ROOT;
 const WEB_SETTINGS_KEY = "musicdl:web_settings";
 const INSPECT_REQUEST_DELAY_MS = 100;
+const INSPECT_MAX_CONCURRENCY = 3;
 const AUTO_SWITCH_INVALID_DELAY_MS = 500;
-const DEFAULT_WEB_PAGE_SIZE = 200;
+const DEFAULT_WEB_PAGE_SIZE = 50;
 const DEFAULT_CLI_PAGE_SIZE = 20;
 const LOCAL_MUSIC_SOURCE = "local";
 const LEGACY_LOCAL_MUSIC_SOURCE = "local-file";
@@ -1982,6 +1983,7 @@ async function navigateTo(url, options = {}) {
       throw new Error("missing container");
     }
 
+    cancelPendingSongInspections();
     currentContainer.innerHTML = nextContainer.innerHTML;
     syncRightToolbar(nextDoc, currentContainer);
     defaultDocumentTitle = nextDoc.title || defaultDocumentTitle;
@@ -3430,6 +3432,7 @@ async function loadLocalMusicPage(page = 1, options = {}) {
     }
 
     const tracks = Array.isArray(payload.tracks) ? payload.tracks : [];
+    cancelPendingSongInspections();
     list.innerHTML = tracks.map(renderLocalMusicPageCard).join("");
 
     if (!payload.exists) {
@@ -3660,8 +3663,9 @@ function songFromCard(card) {
   };
 }
 
-function inspectSong(card) {
+async function inspectSong(card, controller = null) {
   if (!card) return;
+  const signal = controller ? controller.signal : undefined;
   const id = card.dataset.id;
   const source = card.dataset.source;
   const duration = card.dataset.duration;
@@ -3676,72 +3680,164 @@ function inspectSong(card) {
     params.set("extra", extra);
   }
 
-  fetch(`${API_ROOT}/inspect?${params.toString()}`)
-    .then((r) => r.json())
-    .then((data) => {
-      if (data && data.song && typeof data.song === "object") {
-        updateCardWithSong(card, data.song, { inspect: false });
-      }
-
-      const currentId = card.dataset.id || id;
-      const sizeTag =
-        document.getElementById(`size-${currentId}`) ||
-        card.querySelector('[id^="size-"]');
-      const bitrateTag =
-        document.getElementById(`bitrate-${currentId}`) ||
-        card.querySelector('[id^="bitrate-"]');
-
-      if (data.valid) {
-        if (sizeTag) {
-          sizeTag.textContent = data.size;
-          sizeTag.className = "tag tag-success";
-        }
-        if (bitrateTag) {
-          bitrateTag.textContent = data.bitrate;
-          bitrateTag.className = "tag";
-        }
-        card.dataset.sortSize = String(parseSizeToBytes(data.size));
-        card.dataset.sortBitrate = String(parseBitrateToKbps(data.bitrate));
-        if (data.duration) {
-          card.dataset.sortDuration = String(
-            parsePositiveInt(
-              data.duration,
-              parsePositiveInt(card.dataset.duration, 0),
-            ),
-          );
-        }
-      } else {
-        if (sizeTag) {
-          sizeTag.textContent = "无效";
-          sizeTag.className = "tag tag-fail";
-        }
-        if (bitrateTag) {
-          bitrateTag.textContent = "-";
-          bitrateTag.className = "tag";
-        }
-        card.dataset.sortSize = "0";
-        card.dataset.sortBitrate = "0";
-      }
-      if (songSortMode !== "default") {
-        applySongSort();
-      }
-    })
-    .catch(() => {
-      const el = document.getElementById(`size-${id}`);
-      if (el) el.textContent = "检测失败";
-    })
-    .finally(() => {
-      delete card.dataset.inspectPending;
-      if (document.querySelector(".tag-fail")) {
-        scheduleAutoSwitchInvalidSources();
-      }
+  try {
+    const response = await fetch(`${API_ROOT}/inspect?${params.toString()}`, {
+      signal,
     });
+    if (signal && signal.aborted) return;
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (
+      (signal && signal.aborted) ||
+      !card.isConnected ||
+      !data ||
+      typeof data !== "object"
+    ) {
+      return;
+    }
+
+    if (data.song && typeof data.song === "object") {
+      updateCardWithSong(card, data.song, { inspect: false });
+    }
+
+    const currentId = card.dataset.id || id;
+    const sizeTag =
+      document.getElementById(`size-${currentId}`) ||
+      card.querySelector('[id^="size-"]');
+    const bitrateTag =
+      document.getElementById(`bitrate-${currentId}`) ||
+      card.querySelector('[id^="bitrate-"]');
+
+    if (data.valid) {
+      if (sizeTag) {
+        sizeTag.textContent = data.size;
+        sizeTag.className = "tag tag-success";
+      }
+      if (bitrateTag) {
+        bitrateTag.textContent = data.bitrate;
+        bitrateTag.className = "tag";
+      }
+      card.dataset.sortSize = String(parseSizeToBytes(data.size));
+      card.dataset.sortBitrate = String(parseBitrateToKbps(data.bitrate));
+      if (data.duration) {
+        card.dataset.sortDuration = String(
+          parsePositiveInt(
+            data.duration,
+            parsePositiveInt(card.dataset.duration, 0),
+          ),
+        );
+      }
+    } else {
+      if (sizeTag) {
+        sizeTag.textContent = "无效";
+        sizeTag.className = "tag tag-fail";
+      }
+      if (bitrateTag) {
+        bitrateTag.textContent = "-";
+        bitrateTag.className = "tag";
+      }
+      card.dataset.sortSize = "0";
+      card.dataset.sortBitrate = "0";
+    }
+    if (songSortMode !== "default") {
+      applySongSort();
+    }
+  } catch (error) {
+    if (
+      error &&
+      (error.name === "AbortError" || signal?.aborted || !card.isConnected)
+    ) {
+      return;
+    }
+    const el = card.querySelector('[id^="size-"]');
+    if (el) el.textContent = "检测失败";
+  } finally {
+    delete card.dataset.inspectPending;
+    if (
+      card.isConnected &&
+      (!signal || !signal.aborted) &&
+      document.querySelector(".tag-fail")
+    ) {
+      scheduleAutoSwitchInvalidSources();
+    }
+    if (controller) {
+      finishInspectSong(controller);
+    }
+  }
+}
+
+const inspectReadyQueue = [];
+const inspectPendingTimers = new Set();
+const inspectPendingCards = new Set();
+const inspectActiveRequests = new Map();
+
+function pumpInspectQueue() {
+  while (
+    inspectActiveRequests.size < INSPECT_MAX_CONCURRENCY &&
+    inspectReadyQueue.length > 0
+  ) {
+    const card = inspectReadyQueue.shift();
+    if (!card || !card.isConnected) {
+      if (card) {
+        delete card.dataset.inspectPending;
+        inspectPendingCards.delete(card);
+      }
+      continue;
+    }
+
+    const controller = new AbortController();
+    inspectActiveRequests.set(controller, card);
+    void inspectSong(card, controller);
+  }
+}
+
+function finishInspectSong(controller) {
+  if (!inspectActiveRequests.delete(controller)) return;
+  pumpInspectQueue();
+}
+
+function cancelPendingSongInspections() {
+  inspectPendingTimers.forEach((timer) => window.clearTimeout(timer));
+  inspectPendingTimers.clear();
+
+  inspectPendingCards.forEach((card) => {
+    delete card.dataset.inspectPending;
+  });
+  inspectPendingCards.clear();
+  inspectReadyQueue.length = 0;
+
+  inspectActiveRequests.forEach((card, controller) => {
+    delete card.dataset.inspectPending;
+    controller.abort();
+  });
+  inspectActiveRequests.clear();
 }
 
 function queueInspectSong(card, delay = INSPECT_REQUEST_DELAY_MS) {
-  if (!card) return;
+  if (
+    !card ||
+    !card.isConnected ||
+    card.dataset.inspectPending === "1"
+  ) {
+    return;
+  }
   card.dataset.inspectPending = "1";
-  window.setTimeout(() => inspectSong(card), delay);
+  inspectPendingCards.add(card);
+  const timer = window.setTimeout(() => {
+    inspectPendingTimers.delete(timer);
+    if (!card.isConnected) {
+      inspectPendingCards.delete(card);
+      delete card.dataset.inspectPending;
+      return;
+    }
+    inspectPendingCards.delete(card);
+    inspectReadyQueue.push(card);
+    pumpInspectQueue();
+  }, Math.max(0, delay));
+  inspectPendingTimers.add(timer);
 }
 
 const QR_LOGIN_SOURCE_LABELS = {

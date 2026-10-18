@@ -553,7 +553,7 @@ func StartWithOptions(port string, opts StartOptions) {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
-	r.Use(corsMiddleware())
+	r.Use(corsMiddleware(), gzipMiddleware())
 
 	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
 		"artistTokens":       splitArtistTokens,

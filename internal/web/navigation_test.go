@@ -489,7 +489,7 @@ func TestDefaultPageSizePrompts(t *testing.T) {
 		t.Fatalf("ReadFile(app.js): %v", err)
 	}
 	for _, want := range []string{
-		`const DEFAULT_WEB_PAGE_SIZE = 200;`,
+		`const DEFAULT_WEB_PAGE_SIZE = 50;`,
 		`const DEFAULT_CLI_PAGE_SIZE = 20;`,
 	} {
 		if !strings.Contains(string(jsContent), want) {
@@ -504,13 +504,36 @@ func TestDefaultPageSizePrompts(t *testing.T) {
 	html := string(modalContent)
 	for _, want := range []string{
 		`id="setting-web-page-size" aria-label="Web 每页条数"`,
-		`搜索结果列表每页显示的歌曲数量，默认 200。`,
+		`<option value="50" selected>50 条/页（默认）</option>`,
+		`搜索结果列表每页显示的歌曲数量，默认 50。`,
 		`id="setting-cli-page-size" min="1" max="200" step="1" placeholder="默认 20"`,
 		`用于 TUI 分页显示，默认 20。`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("modals.html missing page size prompt %q", want)
 		}
+	}
+}
+
+func TestInspectQueueIsBoundedAndCancelable(t *testing.T) {
+	content, err := templateFS.ReadFile("templates/static/js/app.js")
+	if err != nil {
+		t.Fatalf("ReadFile(app.js): %v", err)
+	}
+	js := string(content)
+	for _, want := range []string{
+		`const INSPECT_MAX_CONCURRENCY = 3;`,
+		`const inspectActiveRequests = new Map();`,
+		`inspectActiveRequests.size < INSPECT_MAX_CONCURRENCY`,
+		`function cancelPendingSongInspections()`,
+		`controller.abort();`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Fatalf("app.js missing inspect queue invariant %q", want)
+		}
+	}
+	if got := strings.Count(js, "cancelPendingSongInspections();"); got < 2 {
+		t.Fatalf("cancelPendingSongInspections call count = %d, want at least 2", got)
 	}
 }
 
