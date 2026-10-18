@@ -15,7 +15,7 @@ func TestAppJSTaskbarThumbnailBridge(t *testing.T) {
 	for _, want := range []string{
 		"function syncTaskbarPlaybackState()",
 		`window.musicDlTaskbarState(hasTracks, isPlaying)`,
-		"window.musicDlTaskbarControl = function (action)",
+		"window.musicDlTaskbarControl = function (action, value)",
 		`case "previous":`,
 		`case "toggle":`,
 		`case "next":`,

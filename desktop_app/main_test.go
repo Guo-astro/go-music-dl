@@ -26,16 +26,37 @@ func TestBridgeRoutesOnlyBrowserDownloadsExternally(t *testing.T) {
 func TestBridgeReportsPlaybackState(t *testing.T) {
 	for _, want := range []string{
 		"musicDlPlaybackState",
+		"musicDlPlaybackMetadata",
 		`notifyPlaybackState("playing")`,
 		`notifyPlaybackState("paused")`,
 		`notifyPlaybackState("ended")`,
-		`notifyPlaybackState("released")`,
 		`bindAPlayerPlayback`,
 		`window.ap.audio === audio`,
+		`setInterval(notifyPlaybackMetadata, 1000)`,
 	} {
 		if !strings.Contains(bridgeScript, want) {
 			t.Fatalf("bridgeScript missing playback token %q", want)
 		}
+	}
+}
+
+func TestBridgeDoesNotStopPlaybackOnPageHide(t *testing.T) {
+	if strings.Contains(bridgeScript, `window.addEventListener("pagehide"`) {
+		t.Fatal("pagehide is not a reliable Android stop signal and must not tear down background playback")
+	}
+}
+
+func TestHandlePlaybackMetadataDoesNotOpenURL(t *testing.T) {
+	app := newDesktopApp(nil, nil)
+	app.handleWebViewMessage(`playback_metadata:{"title":"Song","artist":"Artist","album":"Album","positionMs":1200,"durationMs":180000,"playing":true}`)
+	if app.pendingExternalOpenTo != nil {
+		t.Fatalf("playback metadata should not be treated as URL: %s", app.pendingExternalOpenTo)
+	}
+	if app.playbackMetadata.Title != "Song" || app.playbackMetadata.PositionMS != 1200 {
+		t.Fatalf("unexpected playback metadata: %+v", app.playbackMetadata)
+	}
+	if !app.playbackActive {
+		t.Fatal("playing metadata should recover a missed play event")
 	}
 }
 

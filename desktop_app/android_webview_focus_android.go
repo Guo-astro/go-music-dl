@@ -29,7 +29,14 @@ func (a *desktopApp) requestAndroidWebViewFocus(evt app.ViewEvent) {
 
 func requestAndroidWebViewFocusFromView(view jni.Object) error {
 	return jni.Do(jni.JVMFor(app.JavaVM()), func(env jni.Env) error {
-		className := jni.FindClass(env, "org/gioui/MusicDLWebViewSupport")
+		context, err := activityFromView(env, view)
+		if err != nil {
+			return err
+		}
+		className, err := loadMusicDLJavaClass(env, context, "org.gioui.MusicDLWebViewSupport")
+		if err != nil {
+			return err
+		}
 		method := jni.GetStaticMethodID(env, className, "focusWebViewWhenReady", "(Landroid/view/View;)V")
 		return jni.CallStaticVoidMethod(env, className, method, jni.Value(view))
 	})

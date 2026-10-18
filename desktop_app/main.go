@@ -53,18 +53,20 @@ type desktopApp struct {
 	reloadPending           bool
 	reloadDeferred          bool
 	playbackActive          bool
+	playbackMetadata        playbackMetadata
 	lastFrameAt             time.Time
 	pendingTVNavigation     []string
 }
 
 const (
-	downloadCallback        = "musicDlOpenDownload"
-	playbackCallback        = "musicDlPlaybackState"
-	appStateCallback        = "musicDlAppState"
-	preferredBrowserPK      = ""
-	initialNavRetryInterval = 3 * time.Second
-	initialNavMaxAttempts   = 5
-	resumeReloadThreshold   = 2 * time.Second
+	downloadCallback         = "musicDlOpenDownload"
+	playbackCallback         = "musicDlPlaybackState"
+	playbackMetadataCallback = "musicDlPlaybackMetadata"
+	appStateCallback         = "musicDlAppState"
+	preferredBrowserPK       = ""
+	initialNavRetryInterval  = 3 * time.Second
+	initialNavMaxAttempts    = 5
+	resumeReloadThreshold    = 2 * time.Second
 )
 
 // resumeReloadEnabled 只在 iOS 上启用"长帧间隔 = 从后台恢复"的重载恢复逻辑。
@@ -109,6 +111,73 @@ const bridgeScript = `(function () {
   function notifyPlaybackState(state) {
     if (globalThis.callback && typeof globalThis.callback.musicDlPlaybackState === "function") {
       globalThis.callback.musicDlPlaybackState("playback:" + state);
+    }
+    notifyPlaybackMetadata(true);
+  }
+
+  var lastPlaybackMetadata = "";
+  var lastNativePlaybackAt = 0;
+  function currentPlaybackMetadataPayload() {
+    var player = window.ap;
+    if (!player || !player.audio || !player.list || !Array.isArray(player.list.audios)) {
+      return null;
+    }
+    var index = player.list.index;
+    var audio = typeof index === "number" ? player.list.audios[index] : null;
+    if (!audio) {
+      return null;
+    }
+    var duration = Number(player.audio.duration);
+    var position = Number(player.audio.currentTime);
+    return {
+      title: String(audio.name || ""),
+      artist: String(audio.artist || ""),
+      album: String(audio.album || ""),
+      positionMs: Number.isFinite(position) ? Math.max(0, Math.round(position * 1000)) : 0,
+      durationMs: Number.isFinite(duration) ? Math.max(0, Math.round(duration * 1000)) : 0,
+      playing: !player.audio.paused && !player.audio.ended
+    };
+  }
+
+  function notifyNativePlayback(force) {
+    var bridge = window.MusicDLNativePlayback;
+    if (!bridge || typeof bridge.updatePlayback !== "function") {
+      return;
+    }
+    var now = Date.now();
+    if (!force && now - lastNativePlaybackAt < 750) {
+      return;
+    }
+    var payload = currentPlaybackMetadataPayload();
+    if (!payload) {
+      return;
+    }
+    lastNativePlaybackAt = now;
+    try {
+      bridge.updatePlayback(
+        payload.title,
+        payload.artist,
+        payload.album,
+        payload.positionMs,
+        payload.durationMs,
+        payload.playing
+      );
+    } catch (e) {}
+  }
+
+  function notifyPlaybackMetadata(force) {
+    var payload = currentPlaybackMetadataPayload();
+    if (!payload) {
+      return;
+    }
+    var encoded = JSON.stringify(payload);
+    if (!force && encoded === lastPlaybackMetadata) {
+      return;
+    }
+    lastPlaybackMetadata = encoded;
+    notifyNativePlayback(force);
+    if (globalThis.callback && typeof globalThis.callback.musicDlPlaybackMetadata === "function") {
+      globalThis.callback.musicDlPlaybackMetadata("playback_metadata:" + encoded);
     }
   }
 
@@ -174,10 +243,6 @@ const bridgeScript = `(function () {
     }
   }, true);
 
-  window.addEventListener("pagehide", function () {
-    notifyPlaybackState("released");
-  });
-
   function bindAPlayerPlayback() {
     var player = window.ap;
     if (!player || !player.audio || player.audio.__musicDlPlaybackBound) {
@@ -196,6 +261,9 @@ const bridgeScript = `(function () {
     audio.addEventListener("pause", function () {
       notifyCurrentPlaybackState("paused");
     });
+    audio.addEventListener("timeupdate", function () {
+      notifyNativePlayback(false);
+    });
     audio.addEventListener("ended", function () {
       notifyCurrentPlaybackState("ended");
     });
@@ -209,6 +277,7 @@ const bridgeScript = `(function () {
   }
   bindAPlayerWhenReady();
   setInterval(bindAPlayerPlayback, 500);
+  setInterval(notifyPlaybackMetadata, 1000);
 
   document.addEventListener("click", function (event) {
     if (event.defaultPrevented) {
@@ -289,7 +358,7 @@ func (a *desktopApp) run() error {
 	for {
 		switch evt := gioplugins.Hijack(a.window).(type) {
 		case app.DestroyEvent:
-			a.setPlaybackWakeLock(false)
+			a.stopPlaybackPlatform()
 			return evt.Err
 		case app.ViewEvent:
 			a.configureBundledFFmpeg(evt)
@@ -326,6 +395,12 @@ func (a *desktopApp) handleFrame(evt app.FrameEvent) {
 	a.consumeInitialNavigationResult()
 	a.layoutWebView(gtx)
 	evt.Frame(gtx.Ops)
+	if a.playbackActive {
+		// Android can stop producing Gio frames while the app is in the
+		// background. Keep a low-frequency frame alive so WebView playback
+		// events still reach the foreground service and MediaSession.
+		gtx.Execute(op.InvalidateCmd{At: now.Add(time.Second)})
+	}
 
 	a.ensureBridge(gtx)
 	a.handlePendingNavigation(gtx)
@@ -364,6 +439,11 @@ func (a *desktopApp) registerCallbacks(gtx layout.Context) {
 		View: &a.tag,
 		Tag:  &a.tag,
 		Name: playbackCallback,
+	})
+	gioplugins.Execute(gtx, giowebview.MessageReceiverCmd{
+		View: &a.tag,
+		Tag:  &a.tag,
+		Name: playbackMetadataCallback,
 	})
 	gioplugins.Execute(gtx, giowebview.MessageReceiverCmd{
 		View: &a.tag,
@@ -614,6 +694,10 @@ func (a *desktopApp) consumeWebViewEvents(gtx layout.Context) {
 }
 
 func (a *desktopApp) handleWebViewMessage(raw string) {
+	if strings.HasPrefix(raw, "playback_metadata:") {
+		a.handlePlaybackMetadata(strings.TrimPrefix(raw, "playback_metadata:"))
+		return
+	}
 	if strings.HasPrefix(raw, "playback:") {
 		a.handlePlaybackState(strings.TrimPrefix(raw, "playback:"))
 		return
@@ -687,14 +771,44 @@ func (a *desktopApp) handlePlaybackState(state string) {
 		a.playbackActive = true
 		a.reloadPending = false
 		a.reloadDeferred = false
-		a.setPlaybackWakeLock(true)
+		a.updatePlaybackPlatform("playing")
 	case "paused", "ended", "released":
 		a.playbackActive = false
 		if a.reloadDeferred {
 			a.reloadDeferred = false
 			a.reloadPending = true
 		}
-		a.setPlaybackWakeLock(false)
+		state = strings.TrimSpace(state)
+		if state == "released" {
+			a.updatePlaybackPlatform("released")
+		} else {
+			// "ended" can fire before APlayer changes to the next track. Keep
+			// the media service alive through that transition so background
+			// playback is not torn down at the queue boundary.
+			a.updatePlaybackPlatform("paused")
+		}
+	}
+}
+
+func (a *desktopApp) handlePlaybackMetadata(raw string) {
+	metadata, err := parsePlaybackMetadata(raw)
+	if err != nil {
+		log.Printf("invalid playback metadata from webview: %v", err)
+		return
+	}
+	a.playbackMetadata = metadata
+	switch {
+	case metadata.Playing && !a.playbackActive:
+		// The periodic metadata bridge is also a fallback for a missed play
+		// event. Without this, audio can start while no foreground service is
+		// holding the process alive.
+		a.playbackActive = true
+		a.updatePlaybackPlatform("playing")
+	case !metadata.Playing && a.playbackActive:
+		a.playbackActive = false
+		a.updatePlaybackPlatform("paused")
+	default:
+		a.updatePlaybackMetadataPlatform()
 	}
 }
 

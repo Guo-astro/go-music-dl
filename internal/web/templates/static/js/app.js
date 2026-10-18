@@ -6303,7 +6303,7 @@ function syncTaskbarPlaybackState() {
   );
 }
 
-window.musicDlTaskbarControl = function (action) {
+window.musicDlTaskbarControl = function (action, value) {
   switch (action) {
     case "previous":
       switchTrackByOffset(-1);
@@ -6314,6 +6314,27 @@ window.musicDlTaskbarControl = function (action) {
     case "next":
       switchTrackByOffset(1);
       return true;
+    case "play":
+      if (!ap?.list?.audios?.length) return false;
+      resumeVideoGenAudioRouting();
+      ap.play();
+      return true;
+    case "pause":
+      ap?.pause();
+      return true;
+    case "stop":
+      ap?.pause();
+      seekCurrentTrack(0);
+      currentPlayingId = null;
+      window.currentPlayingId = null;
+      highlightCard(null);
+      syncAllPlayButtons();
+      return true;
+    case "seek": {
+      const positionSeconds = (Number(value) || 0) / 1000;
+      seekCurrentTrack(positionSeconds);
+      return true;
+    }
     default:
       return false;
   }
