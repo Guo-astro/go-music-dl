@@ -30,8 +30,23 @@ func SodaSignerConfig() (string, string) {
 	return strings.TrimSpace(settings.SodaSignerURL), strings.TrimSpace(settings.SodaSignerToken)
 }
 
+// SodaClientDir 返回当前生效的汽水音乐客户端安装目录。
+// QISHUI_CLIENT_DIR 优先于界面设置；空值表示由 music-lib 自动探测默认安装位置。
+func SodaClientDir() string {
+	if dir := strings.TrimSpace(os.Getenv(soda.LocalSignerEnvClientDir)); dir != "" {
+		return normalizeSodaClientDir(dir)
+	}
+	return normalizeSodaClientDir(GetWebSettings().SodaClientDir)
+}
+
+func sodaLocalSignerOptions() soda.LocalSignerOptions {
+	return soda.LocalSignerOptions{ClientDir: SodaClientDir()}
+}
+
 // LocalSodaSignerAvailable 本机是否能用「官方客户端 bdms.node」签名（装了客户端+有 JS 运行时）。
-func LocalSodaSignerAvailable() bool { return soda.LocalSignerAvailable() }
+func LocalSodaSignerAvailable() bool {
+	return soda.LocalSignerAvailableWithOptions(sodaLocalSignerOptions())
+}
 
 // NewSodaClient 统一构造汽水客户端：保存在配置库里的 Cookie + 本机/远程签名器。
 func NewSodaClient(cookie string) *soda.Soda {
@@ -39,7 +54,7 @@ func NewSodaClient(cookie string) *soda.Soda {
 	// soda.New 默认就会带上本机签名器，这里显式声明一次便于阅读；
 	// 配了远程地址则显式指定远程（优先级高于本机）。
 	if strings.TrimSpace(signerURL) == "" {
-		return soda.NewWithOptions(cookie, soda.WithLocalSigner(soda.LocalSignerOptions{}))
+		return soda.NewWithOptions(cookie, soda.WithLocalSigner(sodaLocalSignerOptions()))
 	}
 	return soda.NewWithSigner(cookie, signerURL, signerToken)
 }

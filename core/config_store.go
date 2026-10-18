@@ -74,6 +74,7 @@ type WebSettings struct {
 	GithubProxyURL           string `json:"githubProxyUrl"`
 	SodaSignerURL            string `json:"sodaSignerUrl"`
 	SodaSignerToken          string `json:"sodaSignerToken"`
+	SodaClientDir            string `json:"sodaClientDir"`
 	VgChangeCover            bool   `json:"vgChangeCover"`
 	VgChangeAudio            bool   `json:"vgChangeAudio"`
 	VgChangeLyric            bool   `json:"vgChangeLyric"`
@@ -292,6 +293,7 @@ func normalizeWebSettings(settings WebSettings) WebSettings {
 	}
 	settings.SodaSignerURL = strings.TrimSpace(settings.SodaSignerURL)
 	settings.SodaSignerToken = strings.TrimSpace(settings.SodaSignerToken)
+	settings.SodaClientDir = normalizeSodaClientDir(settings.SodaClientDir)
 	settings.ShortcutPlayPause = normalizeShortcutBinding(settings.ShortcutPlayPause)
 	settings.ShortcutPrevious = normalizeShortcutBinding(settings.ShortcutPrevious)
 	settings.ShortcutNext = normalizeShortcutBinding(settings.ShortcutNext)
@@ -482,6 +484,20 @@ func normalizeWebDownloadDir(dir string) string {
 		return cleaned
 	}
 	return filepath.ToSlash(cleaned)
+}
+
+func normalizeSodaClientDir(dir string) string {
+	dir = strings.TrimSpace(dir)
+	if len(dir) >= 2 {
+		first, last := dir[0], dir[len(dir)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			dir = strings.TrimSpace(dir[1 : len(dir)-1])
+		}
+	}
+	if dir == "" {
+		return ""
+	}
+	return filepath.Clean(dir)
 }
 
 func GetWebSettings() WebSettings {

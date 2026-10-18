@@ -75,6 +75,7 @@ let webSettings = {
   githubProxyUrl: DEFAULT_GITHUB_PROXY_URL,
   sodaSignerUrl: "",
   sodaSignerToken: "",
+  sodaClientDir: "",
   sodaLocalSignerAvailable: false,
   vgChangeCover: false,
   vgChangeAudio: false,
@@ -116,6 +117,7 @@ function normalizeWebSettings(raw) {
     githubProxyUrl: DEFAULT_GITHUB_PROXY_URL,
     sodaSignerUrl: "",
     sodaSignerToken: "",
+    sodaClientDir: "",
     sodaLocalSignerAvailable: false,
     vgChangeCover: false,
     vgChangeAudio: false,
@@ -221,6 +223,9 @@ function normalizeWebSettings(raw) {
   }
   if (typeof raw.sodaSignerToken === "string") {
     next.sodaSignerToken = raw.sodaSignerToken;
+  }
+  if (typeof raw.sodaClientDir === "string") {
+    next.sodaClientDir = raw.sodaClientDir.trim();
   }
   if (typeof raw.sodaLocalSignerAvailable === "boolean") {
     next.sodaLocalSignerAvailable = raw.sodaLocalSignerAvailable;
@@ -774,6 +779,10 @@ function applyWebSettings(settings) {
   );
   if (sodaSignerTokenInput) {
     sodaSignerTokenInput.value = "";
+  }
+  const sodaClientDirInput = document.getElementById("setting-soda-client-dir");
+  if (sodaClientDirInput) {
+    sodaClientDirInput.value = webSettings.sodaClientDir;
   }
   const sodaLocalSignerState = document.getElementById(
     "setting-soda-local-signer-state",
@@ -5114,6 +5123,8 @@ async function saveCookies() {
         document.getElementById("setting-soda-signer-url")?.value || "",
       sodaSignerToken:
         document.getElementById("setting-soda-signer-token")?.value || "",
+      sodaClientDir:
+        document.getElementById("setting-soda-client-dir")?.value || "",
       vgChangeCover: !!document.getElementById("setting-vg-change-cover")
         ?.checked,
       vgChangeAudio: !!document.getElementById("setting-vg-change-audio")

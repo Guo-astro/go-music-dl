@@ -1,6 +1,7 @@
 package core
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -57,5 +58,56 @@ func TestSodaSignerConfigAndClientWiring(t *testing.T) {
 	url, token = SodaSignerConfig()
 	if url != "http://127.0.0.1:7777/sign" || token != "env-token" {
 		t.Fatalf("env signer should win: got %q / %q", url, token)
+	}
+}
+
+func TestSodaClientDirConfigAndLocalSignerWiring(t *testing.T) {
+	baseDir := t.TempDir()
+	t.Setenv("MUSIC_DL_CONFIG_DB", filepath.Join(baseDir, "data", "settings.db"))
+	t.Setenv("MUSIC_DL_COOKIE_FILE", filepath.Join(baseDir, "data", "cookies.json"))
+	t.Setenv("QISHUI_SIGNER_URL", "")
+	t.Setenv("QISHUI_SIGNER_TOKEN", "")
+	t.Setenv("QISHUI_LOCAL_SIGNER", "1")
+	t.Setenv("QISHUI_CLIENT_DIR", "")
+	t.Setenv("QISHUI_BDMS_PATH", "")
+	resetConfigStateForTest()
+	t.Cleanup(resetConfigStateForTest)
+
+	clientDir := filepath.Join(baseDir, "custom-soda", "3.1.0")
+	bdmsPath := filepath.Join(clientDir, "resources", "app.asar.unpacked", "bdms.node")
+	if err := os.MkdirAll(filepath.Dir(bdmsPath), 0o755); err != nil {
+		t.Fatalf("create custom client resources: %v", err)
+	}
+	if err := os.WriteFile(bdmsPath, []byte("test"), 0o644); err != nil {
+		t.Fatalf("write custom bdms.node: %v", err)
+	}
+	runtimePath := filepath.Join(baseDir, "node")
+	if err := os.WriteFile(runtimePath, []byte("test"), 0o755); err != nil {
+		t.Fatalf("write custom runtime: %v", err)
+	}
+	t.Setenv("QISHUI_NODE", runtimePath)
+
+	if err := SaveWebSettings(WebSettings{
+		SodaClientDir: "  \"" + clientDir + "\"  ",
+	}); err != nil {
+		t.Fatalf("save soda client dir: %v", err)
+	}
+	if got := SodaClientDir(); got != filepath.Clean(clientDir) {
+		t.Fatalf("SodaClientDir = %q, want %q", got, filepath.Clean(clientDir))
+	}
+	if !LocalSodaSignerAvailable() {
+		t.Fatal("custom soda client dir should make local signer available")
+	}
+	if client := NewSodaClient("cookie"); !client.HasLocalSigner() {
+		t.Fatal("soda client should use the configured local signer")
+	}
+
+	missingDir := filepath.Join(baseDir, "missing")
+	t.Setenv("QISHUI_CLIENT_DIR", missingDir)
+	if got := SodaClientDir(); got != filepath.Clean(missingDir) {
+		t.Fatalf("environment soda client dir should win: got %q", got)
+	}
+	if LocalSodaSignerAvailable() {
+		t.Fatal("missing environment soda client dir should disable local signer")
 	}
 }

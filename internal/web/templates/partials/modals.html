@@ -348,6 +348,11 @@
                 </p>
                 <p class="setting-hint" id="setting-soda-local-signer-state" style="margin-left: 0;"></p>
                 <div class="cookie-item">
+                    <label for="setting-soda-client-dir">汽水音乐安装目录（可选）</label>
+                    <input type="text" id="setting-soda-client-dir" placeholder="例如 C:\Users\你\AppData\Local\Programs\Soda Music\3.1.0" autocomplete="off" spellcheck="false">
+                    <p class="setting-hint" style="margin-left: 0;">填写包含 <code>SodaMusic.exe</code> 和 <code>resources\app.asar.unpacked\bdms.node</code> 的版本目录；留空自动探测默认位置。环境变量 <code>QISHUI_CLIENT_DIR</code> 优先于此处设置。</p>
+                </div>
+                <div class="cookie-item">
                     <label for="setting-soda-signer-url">远程签名服务地址（可选）</label>
                     <input type="url" id="setting-soda-signer-url" placeholder="留空 = 使用本机签名器" autocomplete="off">
                     <p class="setting-hint" style="margin-left: 0;">远程签名器会看到本次请求的完整请求头（含 Cookie），请只指向自己信任的实例。</p>
