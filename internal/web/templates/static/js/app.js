@@ -1543,7 +1543,9 @@ function bindSearchForm(root = document) {
 function bindSongCardCovers(root = document) {
   const cards = root.querySelectorAll(".song-card");
   cards.forEach((card, index) => {
-    ensureSongActionFold(card);
+    if (songActionFoldMedia.matches) {
+      ensureSongActionFold(card);
+    }
     queueInspectSong(card, index * INSPECT_REQUEST_DELAY_MS);
 
     const coverWrap = card.querySelector(".cover-wrapper");
@@ -1573,6 +1575,17 @@ function bindSongCardCovers(root = document) {
       }
     };
   });
+}
+
+const songActionFoldMedia = window.matchMedia("(max-width: 768px)");
+const refreshSongActionFolds = () => {
+  if (!songActionFoldMedia.matches) return;
+  document.querySelectorAll(".song-card").forEach(ensureSongActionFold);
+};
+if (typeof songActionFoldMedia.addEventListener === "function") {
+  songActionFoldMedia.addEventListener("change", refreshSongActionFolds);
+} else {
+  songActionFoldMedia.addListener(refreshSongActionFolds);
 }
 
 function ensureSongActionFold(card) {
@@ -3056,18 +3069,19 @@ function ensureSongSortIndexes(root = document) {
     if (!card.dataset.sortIndex) {
       card.dataset.sortIndex = String(index);
     }
-    if (!card.dataset.sortDuration) {
-      card.dataset.sortDuration = String(
-        parsePositiveInt(card.dataset.duration, 0),
-      );
+    const sortDuration = String(parsePositiveInt(card.dataset.duration, 0));
+    if (card.dataset.sortDuration !== sortDuration) {
+      card.dataset.sortDuration = sortDuration;
     }
-    if (card.dataset.sortSize) {
-      card.dataset.sortSize = String(parseSizeToBytes(card.dataset.sortSize));
+    const sortSize = String(parseSizeToBytes(card.dataset.sortSize || ""));
+    if (card.dataset.sortSize !== sortSize) {
+      card.dataset.sortSize = sortSize;
     }
-    if (card.dataset.sortBitrate) {
-      card.dataset.sortBitrate = String(
-        parseBitrateToKbps(card.dataset.sortBitrate),
-      );
+    const sortBitrate = String(
+      parseBitrateToKbps(card.dataset.sortBitrate || ""),
+    );
+    if (card.dataset.sortBitrate !== sortBitrate) {
+      card.dataset.sortBitrate = sortBitrate;
     }
   });
 }
@@ -3101,7 +3115,7 @@ function applySongSort(root = document) {
 
   const cards = Array.from(list.querySelectorAll(".song-card"));
   const direction = songSortDirection === "asc" ? 1 : -1;
-  cards.sort((a, b) => {
+  const sortedCards = cards.slice().sort((a, b) => {
     if (songSortMode === "default") {
       return (
         parsePositiveInt(a.dataset.sortIndex, 0) -
@@ -3116,7 +3130,13 @@ function applySongSort(root = document) {
       parsePositiveInt(b.dataset.sortIndex, 0)
     );
   });
-  cards.forEach((card) => list.appendChild(card));
+  if (cards.every((card, index) => card === sortedCards[index])) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  sortedCards.forEach((card) => fragment.appendChild(card));
+  list.appendChild(fragment);
 }
 
 function syncSongSortControls(root = document) {
@@ -3315,8 +3335,8 @@ function renderLocalMusicPageCard(track) {
                 <div class="tags">
                     <span class="tag tag-local">本地</span>
                     <span class="tag tag-duration">${formatDuration(song.duration)}</span>
-                    <span class="tag tag-loading" id="size-${escapeHTML(song.id)}"><i class="fa fa-spinner fa-spin"></i></span>
-                    <span class="tag tag-loading" id="bitrate-${escapeHTML(song.id)}"><i class="fa fa-circle-notch fa-spin"></i></span>
+                    <span class="tag tag-loading" id="size-${escapeHTML(song.id)}">-</span>
+                    <span class="tag tag-loading" id="bitrate-${escapeHTML(song.id)}">-</span>
                 </div>
             </div>
             <div class="actions">
@@ -3663,6 +3683,37 @@ function songFromCard(card) {
   };
 }
 
+function setSongInspectLoading(card, loading) {
+  if (!card) return;
+  const sizeTag =
+    document.getElementById(`size-${card.dataset.id}`) ||
+    card.querySelector('[id^="size-"]');
+  const bitrateTag =
+    document.getElementById(`bitrate-${card.dataset.id}`) ||
+    card.querySelector('[id^="bitrate-"]');
+
+  if (loading) {
+    if (sizeTag) {
+      sizeTag.className = "tag tag-loading";
+      sizeTag.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
+    }
+    if (bitrateTag) {
+      bitrateTag.className = "tag tag-loading";
+      bitrateTag.innerHTML = '<i class="fa fa-circle-notch fa-spin"></i>';
+    }
+    return;
+  }
+
+  if (sizeTag?.querySelector(".fa-spin")) {
+    sizeTag.textContent = "-";
+    sizeTag.className = "tag";
+  }
+  if (bitrateTag?.querySelector(".fa-spin")) {
+    bitrateTag.textContent = "-";
+    bitrateTag.className = "tag";
+  }
+}
+
 async function inspectSong(card, controller = null) {
   if (!card) return;
   const signal = controller ? controller.signal : undefined;
@@ -3755,6 +3806,7 @@ async function inspectSong(card, controller = null) {
     const el = card.querySelector('[id^="size-"]');
     if (el) el.textContent = "检测失败";
   } finally {
+    setSongInspectLoading(card, false);
     delete card.dataset.inspectPending;
     if (
       card.isConnected &&
@@ -3790,6 +3842,7 @@ function pumpInspectQueue() {
 
     const controller = new AbortController();
     inspectActiveRequests.set(controller, card);
+    setSongInspectLoading(card, true);
     void inspectSong(card, controller);
   }
 }
@@ -3811,6 +3864,7 @@ function cancelPendingSongInspections() {
 
   inspectActiveRequests.forEach((card, controller) => {
     delete card.dataset.inspectPending;
+    setSongInspectLoading(card, false);
     controller.abort();
   });
   inspectActiveRequests.clear();
@@ -6818,6 +6872,12 @@ function setPlayButtonState(card, isPlaying) {
   if (!btn) return;
   const icon = btn.querySelector("i");
   if (!icon) return;
+  if (
+    btn.classList.contains("is-stop") === isPlaying &&
+    icon.classList.contains(isPlaying ? "fa-stop" : "fa-play")
+  ) {
+    return;
+  }
 
   icon.classList.remove("fa-play", "fa-stop");
   icon.classList.add(isPlaying ? "fa-stop" : "fa-play");

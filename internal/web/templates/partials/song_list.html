@@ -235,8 +235,8 @@
                 <div class="tags">
                     <span class="tag {{ if $isLocalSong }}tag-local{{ else }}tag-src{{ end }}">{{ if $isLocalSong }}本地{{ else }}{{ .Source }}{{ end }}</span>
                     <span class="tag tag-duration">{{ if .FormatDuration }}{{ .FormatDuration }}{{ else }}-{{ end }}</span>
-                    <span class="tag tag-loading" id="size-{{.ID}}"><i class="fa fa-spinner fa-spin"></i></span>
-                    <span class="tag tag-loading" id="bitrate-{{.ID}}"><i class="fa fa-circle-notch fa-spin"></i></span>
+                    <span class="tag tag-loading" id="size-{{.ID}}">-</span>
+                    <span class="tag tag-loading" id="bitrate-{{.ID}}">-</span>
                 </div>
             </div>
 
