@@ -3,10 +3,12 @@ package web
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,6 +22,7 @@ func gzipMiddleware() gin.HandlerFunc {
 
 		writer := &gzipResponseWriter{
 			ResponseWriter: c.Writer,
+			requestContext: c.Request.Context(),
 			status:         http.StatusOK,
 		}
 		c.Writer = writer
@@ -132,11 +135,14 @@ func isCompressibleResponse(header http.Header, status int) bool {
 
 type gzipResponseWriter struct {
 	gin.ResponseWriter
-	status      int
-	wroteHeader bool
-	compressed  bool
-	closed      bool
-	gzipWriter  *gzip.Writer
+	requestContext  context.Context
+	status          int
+	wroteHeader     bool
+	compressed      bool
+	closed          bool
+	gzipWriter      *gzip.Writer
+	closeNotify     chan bool
+	closeNotifyOnce sync.Once
 }
 
 func (w *gzipResponseWriter) WriteHeader(status int) {
@@ -196,10 +202,17 @@ func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 func (w *gzipResponseWriter) CloseNotify() <-chan bool {
-	if notifier, ok := w.ResponseWriter.(http.CloseNotifier); ok {
-		return notifier.CloseNotify()
-	}
-	return make(chan bool)
+	w.closeNotifyOnce.Do(func() {
+		if w.requestContext == nil || w.requestContext.Done() == nil {
+			return
+		}
+		w.closeNotify = make(chan bool)
+		go func() {
+			<-w.requestContext.Done()
+			close(w.closeNotify)
+		}()
+	})
+	return w.closeNotify
 }
 
 func (w *gzipResponseWriter) Push(target string, options *http.PushOptions) error {

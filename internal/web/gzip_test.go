@@ -48,10 +48,13 @@ func TestGzipMiddlewareCompressesTextResponses(t *testing.T) {
 			if err != nil {
 				t.Fatalf("gzip.NewReader: %v", err)
 			}
-			defer reader.Close()
-			body, err := io.ReadAll(reader)
-			if err != nil {
-				t.Fatalf("read gzip body: %v", err)
+			body, readErr := io.ReadAll(reader)
+			closeErr := reader.Close()
+			if readErr != nil {
+				t.Fatalf("read gzip body: %v", readErr)
+			}
+			if closeErr != nil {
+				t.Fatalf("close gzip reader: %v", closeErr)
 			}
 			if !strings.Contains(string(body), "music") {
 				t.Fatalf("decoded body missing payload: %q", string(body[:min(len(body), 80)]))
