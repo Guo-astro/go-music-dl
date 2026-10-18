@@ -1070,7 +1070,9 @@ func RegisterMusicRoutes(api, configAPI *gin.RouterGroup) {
 			c.JSON(200, inspectFailurePayload(true, "media_unreachable", 2*time.Second))
 			return
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 		if resp.StatusCode == 200 || resp.StatusCode == 206 {
 			valid = true
 			cr := resp.Header.Get("Content-Range")
