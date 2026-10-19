@@ -6791,6 +6791,7 @@ function syncPlayerTrackControls() {
   const hasTracks = Boolean(ap?.list?.audios?.length);
   player?.classList.toggle("is-empty", !hasTracks);
   if (!player) return;
+  syncPlaybackQueueControls(player);
 
   const controls = [
     [".aplayer-icon-back", "上一首"],
@@ -7174,7 +7175,7 @@ if (ap && typeof ap.on === "function") {
       newAudio.source !== "local" &&
       newAudio.source !== "local-file"
     ) {
-      scheduleAutoCache(newAudio);
+      if (!restoringPlaybackSession) scheduleAutoCache(newAudio);
     }
     syncMediaSession(newAudio || getCurrentAPlayerAudio());
     scheduleMediaSessionSync(newAudio || getCurrentAPlayerAudio(), 180);
@@ -9215,4 +9216,226 @@ function removeSongFromCollection(btn, colId, originalSongId, originalSource) {
         refreshCurrentPageContent();
       }
     });
+}
+
+// Playback sessions store song metadata, never expiring stream URLs or lyrics.
+// IndexedDB accommodates large libraries without localStorage's small quota.
+const PLAYBACK_SESSION_DB = "musicdl-playback";
+const PLAYBACK_POSITION_KEY = "musicdl:playback-position";
+let playbackSessionDBPromise = null;
+let restoringPlaybackSession = false;
+let playbackSessionRevision = 0;
+let playbackSessionSavePending = false;
+let playbackSessionStorageWarning = false;
+
+function playbackSessionDB() {
+  if (!playbackSessionDBPromise) {
+    playbackSessionDBPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(PLAYBACK_SESSION_DB, 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("session");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error("播放清单存储被其他窗口占用"));
+    });
+  }
+  return playbackSessionDBPromise;
+}
+
+async function readPlaybackSession() {
+  const db = await playbackSessionDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("session", "readonly");
+    const request = transaction.objectStore("session").get("current");
+    transaction.oncomplete = () => resolve(request.result);
+    transaction.onerror = transaction.onabort = () => reject(transaction.error || new Error("读取播放清单失败"));
+  });
+}
+
+async function writePlaybackSession(session) {
+  const db = await playbackSessionDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("session", "readwrite");
+    transaction.objectStore("session").put(session, "current");
+    transaction.oncomplete = resolve;
+    transaction.onerror = transaction.onabort = () => reject(transaction.error || new Error("保存播放清单失败"));
+  });
+}
+
+function reportPlaybackSessionError(error) {
+  console.warn("[music-dl] playback session storage:", error);
+  if (playbackSessionStorageWarning) return;
+  playbackSessionStorageWarning = true;
+  showToast("播放清单保存不可用", "当前播放不受影响，但本次清单可能无法在重启后恢复。", "warning", 6000);
+}
+
+function playbackSessionSong(audio) {
+  return {
+    id:String(audio.custom_id || ""), source:String(audio.source || ""),
+    name:audio.name || "", artist:audio.artist || "", album:audio.album || "",
+    cover:audio.cover || "", duration:Number(audio.duration) || 0,
+    extra:serializeSongExtra(audio.extra),
+    original_id:audio.original_id || audio.custom_id,
+    original_source:audio.original_source || audio.source,
+  };
+}
+
+function savePlaybackPosition() {
+  if (restoringPlaybackSession || !ap?.list) return;
+  const audio = ap.list.audios[ap.list.index];
+  try {
+    if (!audio) { localStorage.removeItem(PLAYBACK_POSITION_KEY); return; }
+    localStorage.setItem(PLAYBACK_POSITION_KEY, JSON.stringify({
+      id:String(audio.custom_id), source:audio.source,
+      position:Number(ap.audio?.currentTime) || 0,
+    }));
+  } catch (error) { reportPlaybackSessionError(error); }
+}
+
+function schedulePlaybackSessionSave() {
+  if (restoringPlaybackSession) return;
+  playbackSessionRevision++;
+  if (playbackSessionSavePending) return;
+  playbackSessionSavePending = true;
+  // APlayer fires list events before completing its mutation. Snapshot afterward.
+  queueMicrotask(() => {
+    playbackSessionSavePending = false;
+    const songs = (ap?.list?.audios || []).map(playbackSessionSong).filter(song => song.id && song.source);
+    savePlaybackPosition();
+    void writePlaybackSession({version:1, songs}).catch(reportPlaybackSessionError);
+  });
+}
+
+async function restorePlaybackSession() {
+  if (!ap?.list) return;
+  const revision = playbackSessionRevision;
+  try {
+    const session = await readPlaybackSession();
+    // Never replace a playlist selected while the asynchronous read was pending.
+    if (revision !== playbackSessionRevision || ap.list.audios.length) return;
+    if (session?.version !== 1 || !Array.isArray(session.songs)) return;
+    const songs = session.songs.filter(song => song && typeof song.id === "string" && song.id && typeof song.source === "string" && song.source);
+    if (!songs.length) return;
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(PLAYBACK_POSITION_KEY) || "{}"); } catch (_) {}
+    if (!saved || typeof saved !== "object") saved = {};
+    const playlist = songs.map(song => ({...playbackEntryFromSong(song), original_id:song.original_id || song.id, original_source:song.original_source || song.source}));
+    const index = Math.max(0, playlist.findIndex(song => song.custom_id === saved.id && song.source === saved.source));
+    const position = Number(saved.position);
+    restoringPlaybackSession = true;
+    try {
+      ap.list.add(playlist);
+      ap.list.switch(index);
+      ap.pause();
+    } finally { restoringPlaybackSession = false; }
+    if (Number.isFinite(position) && position > 0) {
+      const selected = ap.list.audios[index];
+      const seek = () => {
+        if (ap.list.audios[ap.list.index] !== selected) return;
+        const duration = Number(ap.audio.duration);
+        ap.seek(Number.isFinite(duration) && duration > 0 ? Math.min(position, duration) : position);
+      };
+      if (ap.audio.readyState >= 1) seek();
+      else ap.audio.addEventListener("loadedmetadata", seek, {once:true});
+    }
+    syncPlayerTrackControls();
+    showToast("已恢复播放清单", `共 ${playlist.length} 首，点击播放继续。`, "success", 3500);
+  } catch (error) { reportPlaybackSessionError(error); }
+}
+
+if (ap?.on) {
+  for (const event of ["listadd", "listremove", "listclear"]) ap.on(event, schedulePlaybackSessionSave);
+  ap.on("listswitch", () => {
+    if (!restoringPlaybackSession) queueMicrotask(savePlaybackPosition);
+  });
+  let lastPlaybackPositionSave = 0;
+  ap.audio.addEventListener("timeupdate", () => {
+    if (Date.now() - lastPlaybackPositionSave < 5000) return;
+    lastPlaybackPositionSave = Date.now();
+    savePlaybackPosition();
+  });
+  ap.audio.addEventListener("pause", savePlaybackPosition);
+  ap.audio.addEventListener("seeked", savePlaybackPosition);
+  window.addEventListener("pagehide", savePlaybackPosition);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", restorePlaybackSession, {once:true});
+  else void restorePlaybackSession();
+}
+
+function syncPlaybackQueueControls(player) {
+  const list = player.querySelector(".aplayer-list");
+  const ol = list?.querySelector("ol");
+  if (!list || !ol) return;
+  let toolbar = list.querySelector(".playback-queue-toolbar");
+  if (!toolbar) {
+    toolbar = document.createElement("div");
+    toolbar.className = "playback-queue-toolbar";
+    toolbar.innerHTML = '<span class="playback-queue-count"></span><button type="button" class="btn-pill btn-pill-danger playback-queue-clear"><i class="fa-solid fa-trash-can" aria-hidden="true"></i> 清空清单</button>';
+    toolbar.addEventListener("click", event => event.stopPropagation());
+    toolbar.querySelector("button").addEventListener("click", () => { void clearPlaybackQueue(); });
+    list.prepend(toolbar);
+    // APlayer delegates every list click as a song switch. Intercept removals first.
+    list.addEventListener("click", event => {
+      const button = event.target.closest(".playback-remove-track");
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const row = button.closest("li");
+      const index = Array.from(ol.children).indexOf(row);
+      if (index >= 0) void removePlaybackQueueTrack(index);
+    }, true);
+  }
+  const count = ap?.list?.audios?.length || 0;
+  const label = toolbar.querySelector(".playback-queue-count");
+  if (label.textContent !== `播放清单 · ${count} 首`) label.textContent = `播放清单 · ${count} 首`;
+  toolbar.querySelector("button").disabled = !count;
+  if (list.dataset.queueControlsCount === String(count) && (!count || ol.lastElementChild?.querySelector(".playback-remove-track"))) return;
+  list.dataset.queueControlsCount = String(count);
+  for (const row of ol.children) {
+    if (row.querySelector(".playback-remove-track")) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "playback-remove-track";
+    const name = row.querySelector(".aplayer-list-title")?.textContent || "此歌曲";
+    button.title = "从播放清单移除";
+    button.setAttribute("aria-label", `从播放清单移除：${name}`);
+    button.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+    row.appendChild(button);
+  }
+}
+
+function resetEmptyPlaybackQueue() {
+  if (ap?.list?.audios?.length) return;
+  currentPlayingId = null;
+  window.currentPlayingId = null;
+  highlightCard(null);
+  syncAllPlayButtons();
+  KaraokeLyrics.hide();
+  clearMediaSession();
+  document.title = defaultDocumentTitle || "music-dl";
+}
+
+async function savePlaybackQueueNow() {
+  savePlaybackPosition();
+  const songs = (ap?.list?.audios || []).map(playbackSessionSong).filter(song => song.id && song.source);
+  await writePlaybackSession({version:1, songs});
+}
+
+async function clearPlaybackQueue() {
+  if (!ap?.list?.audios?.length) return;
+  if (!(await confirmAppAction({title:"清空播放清单", message:"确定停止播放并清空整个播放清单及已保存的进度？重启后不会恢复此清单。歌曲文件、播放历史和下载队列会保留。", confirmLabel:"清空清单", destructive:true}))) return;
+  ap.list.clear();
+  resetEmptyPlaybackQueue();
+  syncPlayerTrackControls();
+  try {
+    await savePlaybackQueueNow();
+    showToast("播放清单已清空", "重启后不会再恢复此清单。", "success", 3000);
+  } catch (error) { reportPlaybackSessionError(error); }
+}
+
+async function removePlaybackQueueTrack(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= (ap?.list?.audios?.length || 0)) return;
+  ap.list.remove(index);
+  resetEmptyPlaybackQueue();
+  syncPlayerTrackControls();
+  try { await savePlaybackQueueNow(); }
+  catch (error) { reportPlaybackSessionError(error); }
 }
