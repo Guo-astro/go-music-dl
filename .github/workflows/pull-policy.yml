@@ -5,6 +5,7 @@ on:
 
 # This trusted workflow only uses PR metadata; never check out or run fork code.
 permissions:
+  issues: write
   pull-requests: write
 
 jobs:
@@ -14,6 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Close PR if title contains ".go"
-        uses: superbrothers/close-pull-request@v3
+        uses: actions/github-script@v7
         with:
-          comment: "非法PR. 请`fork`后修改自己的仓库, 而不是向主仓库提交更改. 如果您确信您的PR是为了给主仓库新增功能或修复bug, 请更改默认PR标题. **注意**: 如果您再次触发本提示, 则有可能导致账号被封禁."
+          script: |
+            const number = context.payload.pull_request.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+              body: [
+                "非法 PR：请 fork 后修改自己的仓库，而不是向主仓库提交更改。",
+                "如果这个 PR 确实用于给主仓库新增功能或修复 bug，请修改默认 PR 标题。",
+                "注意：重复触发本提示可能导致账号被封禁。",
+              ].join("\n\n"),
+            });
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: number,
+              state: "closed",
+            });

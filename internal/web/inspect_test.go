@@ -68,6 +68,30 @@ func TestInspectResolutionFailureDefaultsUnknownErrorsToRetryable(t *testing.T) 
 	}
 }
 
+func TestInspectResolutionFailureStopsRetryingDefinitiveUnavailableSongs(t *testing.T) {
+	tests := []string{
+		"no valid download url found or vip required",
+		"download url not found (might be paid song)",
+		"kugou song info unavailable, errcode=0",
+		"kugou songinfo v2 requires cookie t and KugooID",
+	}
+
+	for _, message := range tests {
+		t.Run(message, func(t *testing.T) {
+			payload := inspectResolutionFailure(errors.New(message))
+			if got := payload["retryable"]; got != false {
+				t.Fatalf("retryable = %#v, want false for %q", got, message)
+			}
+			if got := payload["status"]; got != "invalid" {
+				t.Fatalf("status = %#v, want invalid for %q", got, message)
+			}
+			if _, exists := payload["retry_after_ms"]; exists {
+				t.Fatalf("retry_after_ms should be omitted for %q", message)
+			}
+		})
+	}
+}
+
 func TestInspectRetryAfterDelayAcceptsSecondsAndDates(t *testing.T) {
 	resp := &http.Response{Header: make(http.Header)}
 	resp.Header.Set("Retry-After", "3")

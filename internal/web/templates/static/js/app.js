@@ -4976,6 +4976,24 @@ let downloadQueueRenderKey = "";
 let downloadQueueFilter = "";
 let downloadManagerTab = "queue";
 
+function createDownloadRequestID() {
+  const cryptoAPI = globalThis.crypto;
+  if (typeof cryptoAPI?.randomUUID === "function") return cryptoAPI.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  if (typeof cryptoAPI?.getRandomValues === "function") {
+    cryptoAPI.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function enqueueDownloadURLs(urls) {
   const songs = urls.map(raw => {
     const params = new URL(raw, window.location.href).searchParams;
@@ -4984,7 +5002,7 @@ async function enqueueDownloadURLs(urls) {
   const response = await fetch(`${API_ROOT}/api/downloads/queue`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
-    body: JSON.stringify({ request_id: crypto.randomUUID(), songs }),
+    body: JSON.stringify({ request_id: createDownloadRequestID(), songs }),
   });
   const data = await response.json();
   if (!response.ok || data.error) throw new Error(data.error || "加入队列失败");
@@ -8965,7 +8983,7 @@ async function downloadWholeCollection(button) {
     const response = await fetch(`${API_ROOT}/api/downloads/queue/container`, {
       method: "POST",
       headers: {"Content-Type":"application/json", "X-Requested-With":"XMLHttpRequest"},
-      body: JSON.stringify({request_id:crypto.randomUUID(),kind:button.dataset.containerKind,id:button.dataset.containerId,source:button.dataset.containerSource || "",link:button.dataset.containerLink || "",embed:!!webSettings.embedDownload}),
+      body: JSON.stringify({request_id:createDownloadRequestID(),kind:button.dataset.containerKind,id:button.dataset.containerId,source:button.dataset.containerSource || "",link:button.dataset.containerLink || "",embed:!!webSettings.embedDownload}),
     });
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || "加入队列失败");

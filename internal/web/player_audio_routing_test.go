@@ -14,6 +14,7 @@ func TestVideoGenPrewarmsPlayerAudioRouting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read app.js: %v", err)
 	}
+	appSource := strings.ReplaceAll(string(appJS), "\r\n", "\n")
 
 	for _, want := range []string{
 		"prepareAudioRouting: function(options = {})",
@@ -31,7 +32,7 @@ func TestVideoGenPrewarmsPlayerAudioRouting(t *testing.T) {
 		`ap.on("play", () => {
     resumeVideoGenAudioRouting();`,
 	} {
-		if !strings.Contains(string(appJS), want) {
+		if !strings.Contains(appSource, want) {
 			t.Fatalf("app.js missing early audio resume token %q", want)
 		}
 	}

@@ -961,8 +961,8 @@ func TestAutoCacheClientWaitsForConfirmedLocalMatch(t *testing.T) {
 		"localMusicMatchCache[audio.custom_id]",
 		`"X-Requested-With": "XMLHttpRequest"`,
 		"scheduleAutoCacheMatch(audio, key)",
-		"custom_id: playbackSong.id",
-		"original_id: ds.id",
+		"custom_id:playback.id",
+		"original_id:song.id",
 		"getPlaybackCardID(newAudio)",
 	} {
 		if !strings.Contains(js, want) {
