@@ -25,6 +25,9 @@ windows = { version = "0.58", features = [
 [build-dependencies]
 winres = "0.1"
 
+[target.'cfg(target_os = "macos")'.build-dependencies]
+cc = "1"
+
 [package.metadata.deb]
 maintainer = "guohuiyuan"
 copyright = "2026, guohuiyuan"

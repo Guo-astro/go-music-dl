@@ -16,6 +16,9 @@ use wry::{WebContext, WebViewBuilder};
 #[cfg(target_os = "windows")]
 mod taskbar_windows;
 
+#[cfg(target_os = "macos")]
+mod native_macos;
+
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -23,6 +26,8 @@ use std::os::windows::process::CommandExt;
 enum DesktopEvent {
     #[cfg(target_os = "windows")]
     Taskbar(taskbar_windows::TaskbarAction),
+    #[cfg(target_os = "macos")]
+    PickDownloadFolder(u64),
 }
 
 mod window_config {
@@ -182,6 +187,24 @@ fn main() -> wry::Result<()> {
             taskbar_windows::handle_playback_state(request.body());
         });
 
+    #[cfg(target_os = "macos")]
+    let builder = {
+        let proxy = event_loop.create_proxy();
+        builder
+            .with_initialization_script(native_macos::INITIALIZATION_SCRIPT)
+            .with_ipc_handler(move |request| {
+                let Some(id) = native_macos::parse_folder_pick_request(request.body()) else {
+                    return;
+                };
+                if proxy
+                    .send_event(DesktopEvent::PickDownloadFolder(id))
+                    .is_err()
+                {
+                    eprintln!("Failed to dispatch folder picker request {id}");
+                }
+            })
+    };
+
     #[cfg(target_os = "windows")]
     {
         use tao::platform::windows::WindowExtWindows;
@@ -195,6 +218,9 @@ fn main() -> wry::Result<()> {
     }
 
     let webview = builder.build()?;
+
+    #[cfg(target_os = "macos")]
+    native_macos::install_native_menu();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -211,6 +237,15 @@ fn main() -> wry::Result<()> {
                     );
                 }
             }
+            #[cfg(target_os = "macos")]
+            tao::event::Event::UserEvent(DesktopEvent::PickDownloadFolder(id)) => {
+                let path = native_macos::pick_folder();
+                window.set_focus();
+                let script = native_macos::folder_pick_result_script(id, path.as_deref());
+                if let Err(error) = webview.evaluate_script(&script) {
+                    eprintln!("Failed to return folder picker result {id}: {error}");
+                }
+            }
             tao::event::Event::WindowEvent {
                 event: tao::event::WindowEvent::CloseRequested,
                 ..
@@ -219,23 +254,31 @@ fn main() -> wry::Result<()> {
                 taskbar_windows::shutdown();
 
                 window.set_visible(false);
-
-                if let Some(child) = child.as_mut() {
-                    child.stop();
-                }
-
-                for _ in 0..5 {
-                    if fs::remove_file(&temp_binary_path).is_ok() || !temp_binary_path.exists() {
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(50));
-                }
-
+                cleanup_runtime(&mut child, &temp_binary_path);
                 *control_flow = ControlFlow::Exit;
+            }
+            tao::event::Event::LoopDestroyed => {
+                #[cfg(target_os = "windows")]
+                taskbar_windows::shutdown();
+
+                cleanup_runtime(&mut child, &temp_binary_path);
             }
             _ => {}
         }
     });
+}
+
+fn cleanup_runtime(child: &mut Option<BackendProcess>, temp_binary_path: &Path) {
+    if let Some(child) = child.as_mut() {
+        child.stop();
+    }
+
+    for _ in 0..5 {
+        if fs::remove_file(temp_binary_path).is_ok() || !temp_binary_path.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 fn extract_backend_binary() -> PathBuf {
